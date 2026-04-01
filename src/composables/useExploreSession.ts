@@ -59,7 +59,7 @@ export function useExploreSession() {
   function subscribeToEvents(queueId: string) {
     unsubscribes.push(
       api.subscribe(
-        EventType.UNKNOWN,
+        EventType.ALL,
         (event: { data?: Record<string, unknown> }) => {
           if (!event.data) return;
           const eventType = event.data.type as string;
