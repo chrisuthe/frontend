@@ -8,7 +8,7 @@
       <div>
         <p class="font-medium text-sm">
           {{ coverage.analyzed_tracks }} of {{ coverage.total_tracks }} tracks
-          analyzed ({{ coverage.coverage_pct }}%)
+          analyzed ({{ Math.round(coverage.coverage_pct) }}%)
         </p>
         <p class="text-xs text-muted-foreground">
           Analyze more tracks for better exploration results.
@@ -342,9 +342,9 @@ async function pickRandomSeed() {
   try {
     const tracks = await api.sendCommand<
       { item_id: string; name: string; artists: { name: string }[] }[]
-    >("music/tracks/library_items", { limit: 50 });
+    >("music/tracks/library_items", { limit: 1, order_by: "random" });
     if (tracks.length > 0) {
-      const random = tracks[Math.floor(Math.random() * tracks.length)];
+      const random = tracks[0];
       selectedSeedId.value = random.item_id;
       searchResults.value = [
         {

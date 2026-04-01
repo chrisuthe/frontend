@@ -7,7 +7,7 @@
       </p>
       <p v-if="coverage" class="text-xs text-muted-foreground mt-1">
         {{ coverage.analyzed_tracks }} of {{ coverage.total_tracks }} tracks
-        analyzed
+        analyzed ({{ Math.round(coverage.coverage_pct) }}%)
       </p>
     </div>
 
@@ -37,6 +37,14 @@
       @stop="onStop"
     />
 
+    <!-- No players available -->
+    <div v-else-if="!hasQueues" class="rounded-lg border p-6 text-center">
+      <p class="font-medium text-sm">No players available</p>
+      <p class="text-xs text-muted-foreground mt-1">
+        Set up a player in Settings before exploring.
+      </p>
+    </div>
+
     <!-- No session: show wizard -->
     <ExploreWizard
       v-else
@@ -53,6 +61,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted } from "vue";
+import api from "@/plugins/api";
 import { store } from "@/plugins/store";
 import { useExploreSession } from "@/composables/useExploreSession";
 import ExploreWizard from "@/components/explore/ExploreWizard.vue";
@@ -83,6 +92,8 @@ const {
 const activeQueueId = computed(
   () => sessionQueueId.value ?? store.activePlayerQueue?.queue_id,
 );
+
+const hasQueues = computed(() => Object.keys(api.queues).length > 0);
 
 onMounted(async () => {
   const queueId = activeQueueId.value;
