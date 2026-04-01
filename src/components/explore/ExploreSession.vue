@@ -73,6 +73,7 @@
 import { computed } from "vue";
 import { Music2 } from "lucide-vue-next";
 import { store } from "@/plugins/store";
+import api from "@/plugins/api";
 import { getImageThumbForItem } from "@/helpers/utils";
 import ExploreCandidateCard from "./ExploreCandidateCard.vue";
 import type { ExploreCandidate } from "@/composables/useExploreSession";
@@ -80,6 +81,7 @@ import type { ExploreCandidate } from "@/composables/useExploreSession";
 const props = defineProps<{
   mode: string;
   candidates: ExploreCandidate[];
+  queueId?: string;
 }>();
 
 const emit = defineEmits<{
@@ -88,16 +90,25 @@ const emit = defineEmits<{
   stop: [];
 }>();
 
+const sessionQueue = computed(() => {
+  if (props.queueId && props.queueId in api.queues) {
+    return api.queues[props.queueId];
+  }
+  return store.activePlayerQueue;
+});
+
+const currentItem = computed(() => sessionQueue.value?.current_item);
+
 const nowPlayingName = computed(
-  () => store.curQueueItem?.media_item?.name || "Nothing playing",
+  () => currentItem.value?.media_item?.name || "Nothing playing",
 );
 const nowPlayingArtist = computed(() => {
-  const mediaItem = store.curQueueItem?.media_item;
+  const mediaItem = currentItem.value?.media_item;
   if (!mediaItem || !("artists" in mediaItem)) return "";
   return mediaItem.artists.map((a) => a.name).join(", ");
 });
 const nowPlayingImage = computed(() => {
-  return getImageThumbForItem(store.curQueueItem, undefined, 300);
+  return getImageThumbForItem(currentItem.value, undefined, 300);
 });
 
 const modeLabel = computed(() => {

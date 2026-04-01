@@ -15,7 +15,7 @@
     <div v-if="loading" class="flex items-center justify-center py-12">
       <div
         class="animate-spin w-8 h-8 border-2 border-primary border-t-transparent rounded-full"
-      />
+      ></div>
     </div>
 
     <!-- Error state -->
@@ -31,6 +31,7 @@
       v-else-if="isActive"
       :mode="currentMode || 'radio'"
       :candidates="candidates"
+      :queue-id="activeQueueId"
       @vote="onVote"
       @skip="onSkip"
       @stop="onStop"
@@ -51,7 +52,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted } from "vue";
+import { computed, onMounted } from "vue";
 import { store } from "@/plugins/store";
 import { useExploreSession } from "@/composables/useExploreSession";
 import ExploreWizard from "@/components/explore/ExploreWizard.vue";
@@ -59,6 +60,7 @@ import ExploreSession from "@/components/explore/ExploreSession.vue";
 
 const {
   sessionState,
+  sessionQueueId,
   candidates,
   themes,
   coverage,
@@ -78,8 +80,12 @@ const {
   triggerBackfill,
 } = useExploreSession();
 
+const activeQueueId = computed(
+  () => sessionQueueId.value ?? store.activePlayerQueue?.queue_id,
+);
+
 onMounted(async () => {
-  const queueId = store.activePlayerQueue?.queue_id;
+  const queueId = activeQueueId.value;
   await Promise.all([fetchThemes(), fetchCoverage()]);
   if (queueId) {
     await fetchStatus(queueId);
@@ -96,30 +102,26 @@ async function onStart(
 }
 
 async function onResume() {
-  const queueId = store.activePlayerQueue?.queue_id;
-  if (queueId) {
-    await resumeSession(queueId);
+  if (activeQueueId.value) {
+    await resumeSession(activeQueueId.value);
   }
 }
 
 async function onVote(trackId: string) {
-  const queueId = store.activePlayerQueue?.queue_id;
-  if (queueId) {
-    await vote(queueId, trackId);
+  if (activeQueueId.value) {
+    await vote(activeQueueId.value, trackId);
   }
 }
 
 async function onSkip() {
-  const queueId = store.activePlayerQueue?.queue_id;
-  if (queueId) {
-    await skip(queueId);
+  if (activeQueueId.value) {
+    await skip(activeQueueId.value);
   }
 }
 
 async function onStop() {
-  const queueId = store.activePlayerQueue?.queue_id;
-  if (queueId) {
-    await stopSession(queueId);
+  if (activeQueueId.value) {
+    await stopSession(activeQueueId.value);
   }
 }
 </script>
