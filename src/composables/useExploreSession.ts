@@ -1,6 +1,7 @@
 import { ref, computed, onUnmounted } from "vue";
 import api from "@/plugins/api";
 import { EventType } from "@/plugins/api/interfaces";
+import type { EventMessage } from "@/plugins/api/interfaces";
 
 export interface ExploreCandidate {
   item_id: string;
@@ -42,6 +43,7 @@ export interface ExploreSessionState {
 
 export function useExploreSession() {
   const sessionState = ref<ExploreSessionState | null>(null);
+  const sessionQueueId = ref<string | null>(null);
   const candidates = ref<ExploreCandidate[]>([]);
   const themes = ref<ExploreTheme[]>([]);
   const coverage = ref<ExploreCoverage | null>(null);
@@ -56,37 +58,37 @@ export function useExploreSession() {
 
   const unsubscribes: (() => void)[] = [];
 
-  function subscribeToEvents(queueId: string) {
-    unsubscribes.push(
-      api.subscribe(
-        EventType.ALL,
-        (event: { data?: Record<string, unknown> }) => {
-          if (!event.data) return;
-          const eventType = event.data.type as string;
-          if (
-            eventType === "EXPLORE_CANDIDATES_UPDATED" &&
-            event.data.queue_id === queueId
-          ) {
-            candidates.value =
-              (event.data.candidates as ExploreCandidate[]) || [];
-          }
-          if (
-            eventType === "EXPLORE_SESSION_ENDED" &&
-            event.data.queue_id === queueId
-          ) {
-            sessionState.value = { active: false, resumable: false };
-            candidates.value = [];
-          }
-        },
-      ),
-    );
-  }
-
   function cleanupSubscriptions() {
     for (const unsub of unsubscribes) {
       unsub();
     }
     unsubscribes.length = 0;
+  }
+
+  function subscribeToEvents(queueId: string) {
+    cleanupSubscriptions(); // Clean up any existing subscriptions first
+    unsubscribes.push(
+      api.subscribe(EventType.ALL, (event: EventMessage) => {
+        const data = event.data;
+        if (typeof data !== "object" || data === null) return;
+        const payload = data as Record<string, unknown>;
+        const eventType = payload.type as string | undefined;
+        if (!eventType) return;
+        if (
+          eventType === "EXPLORE_CANDIDATES_UPDATED" &&
+          payload.queue_id === queueId
+        ) {
+          candidates.value = (payload.candidates as ExploreCandidate[]) || [];
+        }
+        if (
+          eventType === "EXPLORE_SESSION_ENDED" &&
+          payload.queue_id === queueId
+        ) {
+          sessionState.value = { active: false, resumable: false };
+          candidates.value = [];
+        }
+      }),
+    );
   }
 
   async function fetchStatus(queueId: string) {
@@ -97,8 +99,11 @@ export function useExploreSession() {
         { queue_id: queueId },
       );
       sessionState.value = result;
-      if (result.candidates) {
-        candidates.value = result.candidates;
+      candidates.value = result.candidates ?? []; // Always set candidates
+      // Subscribe to events if session is active
+      if (result.active) {
+        subscribeToEvents(queueId);
+        sessionQueueId.value = queueId;
       }
     } catch (e) {
       error.value = `Failed to fetch status: ${e}`;
@@ -130,6 +135,7 @@ export function useExploreSession() {
       sessionState.value = { active: true, mode: result.mode };
       candidates.value = result.candidates || [];
       subscribeToEvents(queueId);
+      sessionQueueId.value = queueId;
     } catch (e) {
       error.value = `Failed to start session: ${e}`;
     } finally {
@@ -140,9 +146,10 @@ export function useExploreSession() {
   async function stopSession(queueId: string) {
     try {
       await api.sendCommand("explore/stop", { queue_id: queueId });
-      sessionState.value = { active: false, resumable: true };
-      candidates.value = [];
       cleanupSubscriptions();
+      // Fetch authoritative state from backend
+      await fetchStatus(queueId);
+      sessionQueueId.value = null;
     } catch (e) {
       error.value = `Failed to stop session: ${e}`;
     }
@@ -160,6 +167,7 @@ export function useExploreSession() {
         sessionState.value = { active: true, mode: result.mode };
         candidates.value = result.candidates || [];
         subscribeToEvents(queueId);
+        sessionQueueId.value = queueId;
       }
     } catch (e) {
       error.value = `Failed to resume session: ${e}`;
@@ -229,7 +237,9 @@ export function useExploreSession() {
   });
 
   return {
+    // State
     sessionState,
+    sessionQueueId,
     candidates,
     themes,
     coverage,
