@@ -253,6 +253,22 @@ const completeInitialization = async () => {
     store.enabledPlugins.delete("party");
   }
 
+  // Check if explore plugin is enabled
+  try {
+    const exploreProviders = await api.getProviderConfigs(
+      ProviderType.PLUGIN,
+      "explore",
+    );
+    if (exploreProviders.length > 0 && exploreProviders[0].enabled) {
+      store.enabledPlugins.add("explore");
+    } else {
+      store.enabledPlugins.delete("explore");
+    }
+  } catch (error) {
+    console.error("[App] Failed to check explore status:", error);
+    store.enabledPlugins.delete("explore");
+  }
+
   const urlParams = new URLSearchParams(window.location.search);
   if (
     (urlParams.get("onboard") === "true" ||
@@ -420,6 +436,21 @@ onMounted(async () => {
       }
     } catch (error) {
       console.error("[App] Failed to update party status:", error);
+    }
+
+    // Keep explore plugin status in sync
+    try {
+      const exploreProviders = await api.getProviderConfigs(
+        ProviderType.PLUGIN,
+        "explore",
+      );
+      if (exploreProviders.length > 0 && exploreProviders[0].enabled) {
+        store.enabledPlugins.add("explore");
+      } else {
+        store.enabledPlugins.delete("explore");
+      }
+    } catch (error) {
+      console.error("[App] Failed to update explore status:", error);
     }
   });
 });

@@ -71,6 +71,40 @@ const routes: RouteRecordRaw[] = [
       },
     ],
   },
+  {
+    path: "/explore",
+    component: () => import("@/layouts/default/Default.vue"),
+    children: [
+      {
+        path: "",
+        name: "explore",
+        component: () =>
+          import(/* webpackChunkName: "explore" */ "@/views/ExploreView.vue"),
+        beforeEnter: async (
+          _to: RouteLocationNormalized,
+          _from: RouteLocationNormalized,
+        ) => {
+          if (api.state.value !== ConnectionState.INITIALIZED) {
+            await new Promise<void>((resolve) => {
+              const unwatch = watch(
+                () => api.state.value,
+                (newState) => {
+                  if (newState === ConnectionState.INITIALIZED) {
+                    unwatch();
+                    resolve();
+                  }
+                },
+                { immediate: true },
+              );
+            });
+          }
+          if (!store.enabledPlugins.has("explore")) {
+            return { name: "discover" };
+          }
+        },
+      },
+    ],
+  },
   // All other routes go through default layout with navigation/player controls
   {
     path: "/",

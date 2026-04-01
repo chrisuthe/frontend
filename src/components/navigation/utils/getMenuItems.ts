@@ -3,6 +3,7 @@ import GenreIcon from "@/components/icons/GenreIcon.vue";
 import { DEFAULT_MENU_ITEMS } from "@/constants";
 import { store } from "@/plugins/store";
 import {
+  Binoculars,
   BookAudio,
   Compass,
   Disc3,
@@ -60,6 +61,15 @@ export const getMenuItems = function () {
         path: "/party",
         isLibraryNode: false,
         hidden: !store.enabledPlugins.has("party"),
+      });
+    }
+    if (enabledMenuItemStr === "explore") {
+      items.push({
+        label: "Explore",
+        icon: Binoculars,
+        path: "/explore",
+        isLibraryNode: false,
+        hidden: !store.enabledPlugins.has("explore"),
       });
     }
     if (enabledMenuItemStr === "artists") {
