@@ -218,7 +218,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { ref, computed, onUnmounted } from "vue";
 import { ChevronRight, Speaker } from "lucide-vue-next";
 import api from "@/plugins/api";
 import { store } from "@/plugins/store";
@@ -304,6 +304,10 @@ function selectSeed(trackId: string) {
 }
 
 let searchTimeout: ReturnType<typeof setTimeout> | null = null;
+
+onUnmounted(() => {
+  if (searchTimeout) clearTimeout(searchTimeout);
+});
 
 async function onSearch() {
   if (searchTimeout) clearTimeout(searchTimeout);

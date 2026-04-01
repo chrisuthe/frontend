@@ -53,6 +53,7 @@
           :key="candidate.item_id"
           :candidate="candidate"
           :show-distance="mode === 'vote'"
+          :selected="candidate.item_id === pendingVoteId"
           @select="onCandidateSelect"
         />
       </div>
@@ -70,7 +71,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 import { Music2 } from "lucide-vue-next";
 import { store } from "@/plugins/store";
 import api from "@/plugins/api";
@@ -120,12 +121,23 @@ const modeLabel = computed(() => {
 
 const gridClass = computed(() => {
   const count = props.candidates.length;
+  if (count === 3) return "grid-cols-3";
   if (count <= 2) return "grid-cols-2";
   return "grid-cols-2 auto-rows-fr";
 });
 
+const pendingVoteId = ref<string | null>(null);
+
+watch(
+  () => props.candidates,
+  () => {
+    pendingVoteId.value = null;
+  },
+);
+
 function onCandidateSelect(trackId: string) {
   if (props.mode === "vote") {
+    pendingVoteId.value = trackId;
     emit("vote", trackId);
   }
 }
