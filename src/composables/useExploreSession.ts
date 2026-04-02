@@ -145,10 +145,17 @@ export function useExploreSession() {
         seed_track_id: seedTrackId,
         theme_id: themeId,
       });
-      sessionState.value = { active: true, mode: result.mode };
+      sessionState.value = {
+        active: true,
+        mode: result.mode,
+        available_presets: ["balanced", "vibe", "party", "genre_era", "discover"],
+        preset: "balanced",
+      };
       candidates.value = result.candidates || [];
       subscribeToEvents(queueId);
       sessionQueueId.value = queueId;
+      // Fetch full status to populate preset, advanced settings, etc.
+      fetchStatus(queueId);
     } catch (e) {
       error.value = `Failed to start session: ${e}`;
     } finally {
@@ -177,9 +184,15 @@ export function useExploreSession() {
         candidates: ExploreCandidate[];
       }>("explore/resume", { queue_id: queueId });
       if (result.status === "started") {
-        sessionState.value = { active: true, mode: result.mode };
+        sessionState.value = {
+          active: true,
+          mode: result.mode,
+          available_presets: ["balanced", "vibe", "party", "genre_era", "discover"],
+          preset: "balanced",
+        };
         candidates.value = result.candidates || [];
         subscribeToEvents(queueId);
+        fetchStatus(queueId);
         sessionQueueId.value = queueId;
       }
     } catch (e) {
