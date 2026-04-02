@@ -37,7 +37,7 @@
       >
         Stop Exploring
       </button>
-      <div v-if="availablePresets.length > 0" class="mt-3 w-full max-w-[180px]">
+      <div v-if="availablePresets?.length" class="mt-3 w-full max-w-[180px]">
         <label
           for="preset-select"
           class="block text-xs text-muted-foreground mb-1 text-center"
