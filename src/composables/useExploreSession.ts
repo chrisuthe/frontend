@@ -39,6 +39,9 @@ export interface ExploreSessionState {
   theme_id?: string | null;
   preset?: string;
   available_presets?: string[];
+  weight_overrides?: Record<string, number>;
+  diversity_override?: number | null;
+  depth_override?: number | null;
   resumable?: boolean;
   last_mode?: string;
   last_seed_track_id?: string;
@@ -59,7 +62,9 @@ export function useExploreSession() {
     () => !isActive.value && sessionState.value?.resumable === true,
   );
   const currentMode = computed(() => sessionState.value?.mode);
-  const currentPreset = computed(() => sessionState.value?.preset ?? "balanced");
+  const currentPreset = computed(
+    () => sessionState.value?.preset ?? "balanced",
+  );
   const availablePresets = computed(
     () => sessionState.value?.available_presets ?? [],
   );
@@ -232,6 +237,36 @@ export function useExploreSession() {
     }
   }
 
+  async function setAdvanced(
+    queueId: string,
+    settings: {
+      weights: Record<string, number>;
+      diversity: number;
+      depth: number;
+    },
+  ) {
+    try {
+      const result = await api.sendCommand<{
+        weights: Record<string, number>;
+        diversity: number | null;
+        depth: number | null;
+        candidates: number;
+      }>("explore/set_advanced", {
+        queue_id: queueId,
+        weights: settings.weights,
+        diversity: settings.diversity,
+        depth: settings.depth,
+      });
+      if (sessionState.value) {
+        sessionState.value.weight_overrides = result.weights;
+        sessionState.value.diversity_override = result.diversity;
+        sessionState.value.depth_override = result.depth;
+      }
+    } catch (e) {
+      error.value = `Failed to apply advanced settings: ${e}`;
+    }
+  }
+
   async function setPreset(queueId: string, preset: string) {
     try {
       const result = await api.sendCommand<{
@@ -282,6 +317,7 @@ export function useExploreSession() {
     vote,
     skip,
     setPreset,
+    setAdvanced,
     fetchThemes,
     fetchCoverage,
     triggerBackfill,

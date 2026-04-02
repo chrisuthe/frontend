@@ -34,10 +34,14 @@
       :queue-id="activeQueueId"
       :preset="currentPreset"
       :available-presets="availablePresets"
+      :weight-overrides="sessionState?.weight_overrides"
+      :diversity-override="sessionState?.diversity_override"
+      :depth-override="sessionState?.depth_override"
       @vote="onVote"
       @skip="onSkip"
       @stop="onStop"
       @set-preset="onSetPreset"
+      @set-advanced="onSetAdvanced"
     />
 
     <!-- No players available -->
@@ -84,6 +88,7 @@ const {
   currentPreset,
   availablePresets,
   setPreset,
+  setAdvanced,
   fetchStatus,
   startSession,
   stopSession,
@@ -145,6 +150,16 @@ async function onStop() {
 async function onSetPreset(preset: string) {
   if (activeQueueId.value) {
     await setPreset(activeQueueId.value, preset);
+  }
+}
+
+async function onSetAdvanced(settings: {
+  weights: Record<string, number>;
+  diversity: number;
+  depth: number;
+}) {
+  if (activeQueueId.value) {
+    await setAdvanced(activeQueueId.value, settings);
   }
 }
 </script>
