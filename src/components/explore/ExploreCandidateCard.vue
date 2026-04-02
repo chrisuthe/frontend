@@ -4,9 +4,9 @@
     :class="{ 'border-primary bg-primary/10': selected }"
     @click="$emit('select', candidate.item_id)"
   >
-    <div class="flex flex-col items-center text-center gap-2">
+    <div class="flex items-center gap-3">
       <div
-        class="relative w-full aspect-square rounded-md overflow-hidden bg-muted"
+        class="relative w-12 h-12 flex-shrink-0 rounded-md overflow-hidden bg-muted"
       >
         <img
           v-if="imageUrl"
@@ -15,26 +15,26 @@
           class="w-full h-full object-cover"
         />
         <div v-else class="w-full h-full flex items-center justify-center">
-          <Music2 :size="32" class="text-muted-foreground" />
+          <Music2 :size="20" class="text-muted-foreground" />
         </div>
       </div>
-      <div class="w-full min-w-0">
+      <div class="flex-1 min-w-0">
         <p class="font-medium text-sm truncate">{{ candidate.name }}</p>
         <p class="text-xs text-muted-foreground truncate">
           {{ candidate.artist }}
         </p>
-        <p v-if="showDistance" class="text-xs text-muted-foreground/60 mt-1">
+        <p v-if="showDistance" class="text-xs text-muted-foreground/60 mt-0.5">
           {{ matchPct }}% match
         </p>
         <p
           v-if="candidate.match_reasons?.length"
-          class="text-xs text-muted-foreground/80 mt-1 leading-snug"
+          class="text-xs text-muted-foreground/80 mt-0.5 leading-snug"
         >
           {{ candidate.match_reasons.join(", ") }}
         </p>
         <p
           v-if="candidate.differ_reasons?.length"
-          class="text-xs text-muted-foreground/50 mt-0.5 italic leading-snug"
+          class="text-xs text-muted-foreground/50 italic leading-snug"
         >
           {{ candidate.differ_reasons.join(", ") }}
         </p>

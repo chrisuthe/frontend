@@ -151,9 +151,7 @@
               class="w-full h-1.5 accent-primary cursor-pointer"
               @input="
                 (e) =>
-                  (localDepth = parseInt(
-                    (e.target as HTMLInputElement).value,
-                  ))
+                  (localDepth = parseInt((e.target as HTMLInputElement).value))
               "
             />
           </div>
@@ -176,7 +174,7 @@
         {{ mode === "vote" ? "Pick What's Next" : "Up Next" }}
       </span>
 
-      <div class="flex-1 grid gap-3" :class="gridClass">
+      <div class="flex-1 flex flex-col gap-2">
         <ExploreCandidateCard
           v-for="candidate in candidates"
           :key="candidate.item_id"
@@ -243,7 +241,13 @@ const emit = defineEmits<{
   skip: [];
   stop: [];
   "set-preset": [preset: string];
-  "set-advanced": [settings: { weights: Record<string, number>; diversity: number; depth: number }];
+  "set-advanced": [
+    settings: {
+      weights: Record<string, number>;
+      diversity: number;
+      depth: number;
+    },
+  ];
 }>();
 
 const showAdvanced = ref(false);
@@ -335,13 +339,6 @@ const modeLabel = computed(() => {
   if (props.mode === "vote") return "Vote for Next";
   if (props.mode === "theme") return "Theme Party";
   return props.mode;
-});
-
-const gridClass = computed(() => {
-  const count = props.candidates.length;
-  if (count === 3) return "grid-cols-3";
-  if (count <= 2) return "grid-cols-2";
-  return "grid-cols-2 auto-rows-fr";
 });
 
 const pendingVoteId = ref<string | null>(null);
