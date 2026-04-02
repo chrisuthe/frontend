@@ -148,7 +148,13 @@ export function useExploreSession() {
       sessionState.value = {
         active: true,
         mode: result.mode,
-        available_presets: ["balanced", "vibe", "party", "genre_era", "discover"],
+        available_presets: [
+          "balanced",
+          "vibe",
+          "party",
+          "genre_era",
+          "discover",
+        ],
         preset: "balanced",
       };
       candidates.value = result.candidates || [];
@@ -187,7 +193,13 @@ export function useExploreSession() {
         sessionState.value = {
           active: true,
           mode: result.mode,
-          available_presets: ["balanced", "vibe", "party", "genre_era", "discover"],
+          available_presets: [
+            "balanced",
+            "vibe",
+            "party",
+            "genre_era",
+            "discover",
+          ],
           preset: "balanced",
         };
         candidates.value = result.candidates || [];
@@ -247,6 +259,23 @@ export function useExploreSession() {
         await api.sendCommand<ExploreCoverage>("explore/coverage");
     } catch (e) {
       error.value = `Failed to fetch coverage: ${e}`;
+    }
+  }
+
+  async function removeTrack(queueId: string, trackId: string) {
+    try {
+      const result = await api.sendCommand<{
+        status: string;
+        candidates: ExploreCandidate[];
+      }>("explore/remove_track", {
+        queue_id: queueId,
+        track_id: trackId,
+      });
+      if (result.candidates) {
+        candidates.value = result.candidates;
+      }
+    } catch (e) {
+      error.value = `Failed to remove track: ${e}`;
     }
   }
 
@@ -331,6 +360,7 @@ export function useExploreSession() {
     skip,
     setPreset,
     setAdvanced,
+    removeTrack,
     fetchThemes,
     fetchCoverage,
     triggerBackfill,

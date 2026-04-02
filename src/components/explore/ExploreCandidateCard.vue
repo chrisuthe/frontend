@@ -39,13 +39,21 @@
           {{ candidate.differ_reasons.join(", ") }}
         </p>
       </div>
+      <button
+        v-if="showRemove"
+        class="flex-shrink-0 p-1 rounded-md text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 transition-colors"
+        title="Remove from queue"
+        @click.stop="$emit('remove', candidate.item_id)"
+      >
+        <X :size="16" />
+      </button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from "vue";
-import { Music2 } from "lucide-vue-next";
+import { Music2, X } from "lucide-vue-next";
 import type { ExploreCandidate } from "@/composables/useExploreSession";
 
 const props = withDefaults(
@@ -53,15 +61,18 @@ const props = withDefaults(
     candidate: ExploreCandidate;
     selected?: boolean;
     showDistance?: boolean;
+    showRemove?: boolean;
   }>(),
   {
     selected: false,
     showDistance: true,
+    showRemove: false,
   },
 );
 
 defineEmits<{
   select: [trackId: string];
+  remove: [trackId: string];
 }>();
 
 const imageUrl = computed(() => {

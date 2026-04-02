@@ -180,8 +180,10 @@
           :key="candidate.item_id"
           :candidate="candidate"
           :show-distance="mode === 'vote'"
+          :show-remove="mode !== 'vote'"
           :selected="candidate.item_id === pendingVoteId"
           @select="onCandidateSelect"
+          @remove="(id: string) => $emit('remove-track', id)"
         />
       </div>
 
@@ -248,6 +250,7 @@ const emit = defineEmits<{
       depth: number;
     },
   ];
+  "remove-track": [trackId: string];
 }>();
 
 const showAdvanced = ref(false);

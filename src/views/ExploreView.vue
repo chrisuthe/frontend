@@ -42,6 +42,7 @@
       @stop="onStop"
       @set-preset="onSetPreset"
       @set-advanced="onSetAdvanced"
+      @remove-track="onRemoveTrack"
     />
 
     <!-- No players available -->
@@ -89,6 +90,7 @@ const {
   availablePresets,
   setPreset,
   setAdvanced,
+  removeTrack,
   fetchStatus,
   startSession,
   stopSession,
@@ -150,6 +152,12 @@ async function onStop() {
 async function onSetPreset(preset: string) {
   if (activeQueueId.value) {
     await setPreset(activeQueueId.value, preset);
+  }
+}
+
+async function onRemoveTrack(trackId: string) {
+  if (activeQueueId.value) {
+    await removeTrack(activeQueueId.value, trackId);
   }
 }
 
