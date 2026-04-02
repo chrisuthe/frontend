@@ -9,6 +9,8 @@ export interface ExploreCandidate {
   artist: string;
   image_url: string | null;
   distance: number;
+  match_reasons?: string[] | null;
+  differ_reasons?: string[] | null;
 }
 
 export interface ExploreTheme {

@@ -26,6 +26,18 @@
         <p v-if="showDistance" class="text-xs text-muted-foreground/60 mt-1">
           {{ matchPct }}% match
         </p>
+        <p
+          v-if="candidate.match_reasons?.length"
+          class="text-xs text-muted-foreground/80 mt-1 leading-snug"
+        >
+          {{ candidate.match_reasons.join(", ") }}
+        </p>
+        <p
+          v-if="candidate.differ_reasons?.length"
+          class="text-xs text-muted-foreground/50 mt-0.5 italic leading-snug"
+        >
+          {{ candidate.differ_reasons.join(", ") }}
+        </p>
       </div>
     </div>
   </div>
