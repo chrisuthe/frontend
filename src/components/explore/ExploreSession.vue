@@ -37,6 +37,29 @@
       >
         Stop Exploring
       </button>
+      <div v-if="availablePresets.length > 0" class="mt-3 w-full max-w-[180px]">
+        <label
+          for="preset-select"
+          class="block text-xs text-muted-foreground mb-1 text-center"
+        >
+          Match Style
+        </label>
+        <select
+          id="preset-select"
+          :value="preset"
+          class="w-full rounded-md border bg-background px-2 py-1.5 text-xs capitalize cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary"
+          @change="onPresetChange"
+        >
+          <option
+            v-for="p in availablePresets"
+            :key="p"
+            :value="p"
+            class="capitalize"
+          >
+            {{ presetLabel(p) }}
+          </option>
+        </select>
+      </div>
     </div>
 
     <!-- Right: Candidates -->
@@ -79,17 +102,37 @@ import { getImageThumbForItem } from "@/helpers/utils";
 import ExploreCandidateCard from "./ExploreCandidateCard.vue";
 import type { ExploreCandidate } from "@/composables/useExploreSession";
 
+const PRESET_LABELS: Record<string, string> = {
+  balanced: "Balanced",
+  vibe: "Vibe & Mood",
+  party: "Party & Rhythm",
+  genre_era: "Genre & Era",
+  discover: "Discover",
+};
+
 const props = defineProps<{
   mode: string;
   candidates: ExploreCandidate[];
   queueId?: string;
+  preset?: string;
+  availablePresets?: string[];
 }>();
 
 const emit = defineEmits<{
   vote: [trackId: string];
   skip: [];
   stop: [];
+  "set-preset": [preset: string];
 }>();
+
+function presetLabel(p: string): string {
+  return PRESET_LABELS[p] ?? p;
+}
+
+function onPresetChange(event: Event) {
+  const value = (event.target as HTMLSelectElement).value;
+  emit("set-preset", value);
+}
 
 const sessionQueue = computed(() => {
   if (props.queueId && props.queueId in api.queues) {

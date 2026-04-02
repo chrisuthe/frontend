@@ -32,9 +32,12 @@
       :mode="currentMode || 'radio'"
       :candidates="candidates"
       :queue-id="activeQueueId"
+      :preset="currentPreset"
+      :available-presets="availablePresets"
       @vote="onVote"
       @skip="onSkip"
       @stop="onStop"
+      @set-preset="onSetPreset"
     />
 
     <!-- No players available -->
@@ -78,6 +81,9 @@ const {
   isActive,
   isResumable,
   currentMode,
+  currentPreset,
+  availablePresets,
+  setPreset,
   fetchStatus,
   startSession,
   stopSession,
@@ -133,6 +139,12 @@ async function onSkip() {
 async function onStop() {
   if (activeQueueId.value) {
     await stopSession(activeQueueId.value);
+  }
+}
+
+async function onSetPreset(preset: string) {
+  if (activeQueueId.value) {
+    await setPreset(activeQueueId.value, preset);
   }
 }
 </script>

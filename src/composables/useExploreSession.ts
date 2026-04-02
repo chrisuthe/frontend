@@ -37,6 +37,8 @@ export interface ExploreSessionState {
   candidates?: ExploreCandidate[];
   played_count?: number;
   theme_id?: string | null;
+  preset?: string;
+  available_presets?: string[];
   resumable?: boolean;
   last_mode?: string;
   last_seed_track_id?: string;
@@ -57,6 +59,10 @@ export function useExploreSession() {
     () => !isActive.value && sessionState.value?.resumable === true,
   );
   const currentMode = computed(() => sessionState.value?.mode);
+  const currentPreset = computed(() => sessionState.value?.preset ?? "balanced");
+  const availablePresets = computed(
+    () => sessionState.value?.available_presets ?? [],
+  );
 
   const unsubscribes: (() => void)[] = [];
 
@@ -226,6 +232,23 @@ export function useExploreSession() {
     }
   }
 
+  async function setPreset(queueId: string, preset: string) {
+    try {
+      const result = await api.sendCommand<{
+        preset: string;
+        candidates: number;
+      }>("explore/set_preset", {
+        queue_id: queueId,
+        preset,
+      });
+      if (sessionState.value) {
+        sessionState.value.preset = result.preset;
+      }
+    } catch (e) {
+      error.value = `Failed to change preset: ${e}`;
+    }
+  }
+
   async function triggerBackfill() {
     try {
       await api.sendCommand("sonic_analysis/trigger_backfill");
@@ -250,12 +273,15 @@ export function useExploreSession() {
     isActive,
     isResumable,
     currentMode,
+    currentPreset,
+    availablePresets,
     fetchStatus,
     startSession,
     stopSession,
     resumeSession,
     vote,
     skip,
+    setPreset,
     fetchThemes,
     fetchCoverage,
     triggerBackfill,
