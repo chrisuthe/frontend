@@ -37,6 +37,7 @@
       :weight-overrides="sessionState?.weight_overrides"
       :diversity-override="sessionState?.diversity_override"
       :depth-override="sessionState?.depth_override"
+      :fetch-track-analysis="onFetchTrackAnalysis"
       @vote="onVote"
       @skip="onSkip"
       @stop="onStop"
@@ -91,6 +92,7 @@ const {
   setPreset,
   setAdvanced,
   removeTrack,
+  fetchTrackAnalysis,
   fetchStatus,
   startSession,
   stopSession,
@@ -153,6 +155,10 @@ async function onSetPreset(preset: string) {
   if (activeQueueId.value) {
     await setPreset(activeQueueId.value, preset);
   }
+}
+
+async function onFetchTrackAnalysis(queueId: string) {
+  return await fetchTrackAnalysis(queueId);
 }
 
 async function onRemoveTrack(trackId: string) {

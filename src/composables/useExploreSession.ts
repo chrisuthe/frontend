@@ -262,6 +262,19 @@ export function useExploreSession() {
     }
   }
 
+  async function fetchTrackAnalysis(queueId: string) {
+    try {
+      return await api.sendCommand<{
+        last: Record<string, unknown> | null;
+        current: Record<string, unknown> | null;
+        next: Record<string, unknown> | null;
+      }>("explore/track_analysis", { queue_id: queueId });
+    } catch (e) {
+      error.value = `Failed to fetch track analysis: ${e}`;
+      return null;
+    }
+  }
+
   async function removeTrack(queueId: string, trackId: string) {
     try {
       const result = await api.sendCommand<{
@@ -361,6 +374,7 @@ export function useExploreSession() {
     setPreset,
     setAdvanced,
     removeTrack,
+    fetchTrackAnalysis,
     fetchThemes,
     fetchCoverage,
     triggerBackfill,
