@@ -310,6 +310,7 @@ export function useExploreSession() {
 
   async function switchSource(queueId: string, domain: string) {
     try {
+      loading.value = true;
       // Switch the similarity index to the new provider
       await api.sendCommand<{ status: string; index_size: number }>(
         "sonic_analysis/switch_provider",
@@ -320,8 +321,12 @@ export function useExploreSession() {
       }
       // Refresh the queue with new tracks from the switched provider
       await setPreset(queueId, sessionState.value?.preset ?? "balanced");
+      // Fetch full status to sync all state
+      await fetchStatus(queueId);
     } catch (e) {
       error.value = `Failed to switch analysis source: ${e}`;
+    } finally {
+      loading.value = false;
     }
   }
 
@@ -334,6 +339,7 @@ export function useExploreSession() {
     },
   ) {
     try {
+      loading.value = true;
       const result = await api.sendCommand<{
         weights: Record<string, number>;
         diversity: number | null;
@@ -350,25 +356,31 @@ export function useExploreSession() {
         sessionState.value.diversity_override = result.diversity;
         sessionState.value.depth_override = result.depth;
       }
+      // Fetch full status to sync candidates
+      await fetchStatus(queueId);
     } catch (e) {
       error.value = `Failed to apply advanced settings: ${e}`;
+    } finally {
+      loading.value = false;
     }
   }
 
   async function setPreset(queueId: string, preset: string) {
     try {
-      const result = await api.sendCommand<{
+      loading.value = true;
+      await api.sendCommand<{
         preset: string;
         candidates: number;
       }>("explore/set_preset", {
         queue_id: queueId,
         preset,
       });
-      if (sessionState.value) {
-        sessionState.value.preset = result.preset;
-      }
+      // Fetch full status to sync preset, weight overrides, candidates, etc.
+      await fetchStatus(queueId);
     } catch (e) {
       error.value = `Failed to change preset: ${e}`;
+    } finally {
+      loading.value = false;
     }
   }
 

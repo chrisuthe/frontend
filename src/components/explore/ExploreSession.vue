@@ -402,9 +402,13 @@ watch(
   (overrides) => {
     if (overrides && Object.keys(overrides).length > 0) {
       for (const group of WEIGHT_GROUPS) {
-        if (group.key in overrides) {
-          localWeights[group.key] = overrides[group.key];
-        }
+        localWeights[group.key] =
+          group.key in overrides ? overrides[group.key] : 1.0;
+      }
+    } else {
+      // Reset all to defaults when overrides are cleared (e.g. preset change)
+      for (const group of WEIGHT_GROUPS) {
+        localWeights[group.key] = 1.0;
       }
     }
   },
@@ -413,14 +417,14 @@ watch(
 watch(
   () => props.diversityOverride,
   (v) => {
-    if (v != null) localDiversity.value = v;
+    localDiversity.value = v != null ? v : 0.3;
   },
   { immediate: true },
 );
 watch(
   () => props.depthOverride,
   (v) => {
-    if (v != null) localDepth.value = v;
+    localDepth.value = v != null ? v : 1;
   },
   { immediate: true },
 );
