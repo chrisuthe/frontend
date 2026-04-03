@@ -259,7 +259,10 @@
               <p
                 class="text-[10px] uppercase tracking-wider text-muted-foreground mb-1"
               >
-                Group Distances
+                Distances
+                <span v-if="slot.distance_label" class="normal-case"
+                  >({{ slot.distance_label }})</span
+                >
               </p>
               <div
                 v-for="(dist, group) in slot.group_distances as Record<

@@ -26,8 +26,10 @@ export interface TrackAnalysisSlot {
   name: string;
   artist: string;
   item_id: string;
+  provider_item_id?: string;
   analysis: Record<string, unknown>;
   group_distances: Record<string, number> | null;
+  distance_label?: string;
 }
 
 export interface TrackAnalysisData {
