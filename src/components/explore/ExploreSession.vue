@@ -3,7 +3,9 @@
     <!-- Row 1: Now Playing | Up Next -->
     <div class="flex min-h-[300px]">
       <!-- Left: Now Playing -->
-      <div class="flex-1 flex flex-col items-center justify-center p-6 border-r">
+      <div
+        class="flex-1 flex flex-col items-center justify-center p-6 border-r"
+      >
         <span
           class="text-xs uppercase tracking-wider text-primary font-semibold mb-3"
         >
@@ -260,7 +262,10 @@
                 Group Distances
               </p>
               <div
-                v-for="(dist, group) in slot.group_distances as Record<string, number>"
+                v-for="(dist, group) in slot.group_distances as Record<
+                  string,
+                  number
+                >"
                 :key="group"
                 class="flex justify-between"
               >
@@ -303,7 +308,10 @@ import { store } from "@/plugins/store";
 import api from "@/plugins/api";
 import { getImageThumbForItem } from "@/helpers/utils";
 import ExploreCandidateCard from "./ExploreCandidateCard.vue";
-import type { ExploreCandidate } from "@/composables/useExploreSession";
+import type {
+  ExploreCandidate,
+  TrackAnalysisData,
+} from "@/composables/useExploreSession";
 
 const PRESET_LABELS: Record<string, string> = {
   balanced: "Balanced",
@@ -323,20 +331,6 @@ const WEIGHT_GROUPS = [
 ] as const;
 
 type WeightKey = (typeof WEIGHT_GROUPS)[number]["key"];
-
-interface TrackAnalysisSlot {
-  name: string;
-  artist: string;
-  item_id: string;
-  analysis: Record<string, unknown>;
-  group_distances: Record<string, number> | null;
-}
-
-interface TrackAnalysisData {
-  last: TrackAnalysisSlot | null;
-  current: TrackAnalysisSlot | null;
-  next: TrackAnalysisSlot | null;
-}
 
 const props = defineProps<{
   mode: string;

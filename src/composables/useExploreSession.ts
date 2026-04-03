@@ -22,6 +22,20 @@ export interface ExploreTheme {
   builtin: boolean;
 }
 
+export interface TrackAnalysisSlot {
+  name: string;
+  artist: string;
+  item_id: string;
+  analysis: Record<string, unknown>;
+  group_distances: Record<string, number> | null;
+}
+
+export interface TrackAnalysisData {
+  last: TrackAnalysisSlot | null;
+  current: TrackAnalysisSlot | null;
+  next: TrackAnalysisSlot | null;
+}
+
 export interface ExploreCoverage {
   total_tracks: number;
   analyzed_tracks: number;
@@ -264,11 +278,10 @@ export function useExploreSession() {
 
   async function fetchTrackAnalysis(queueId: string) {
     try {
-      return await api.sendCommand<{
-        last: Record<string, unknown> | null;
-        current: Record<string, unknown> | null;
-        next: Record<string, unknown> | null;
-      }>("explore/track_analysis", { queue_id: queueId });
+      return await api.sendCommand<TrackAnalysisData>(
+        "explore/track_analysis",
+        { queue_id: queueId },
+      );
     } catch (e) {
       error.value = `Failed to fetch track analysis: ${e}`;
       return null;
