@@ -362,6 +362,7 @@ const props = defineProps<{
   availablePresets?: string[];
   analysisSource?: string;
   weightOverrides?: Record<string, number>;
+  effectiveWeights?: Record<string, number>;
   diversityOverride?: number | null;
   depthOverride?: number | null;
   fetchTrackAnalysis?: (queueId: string) => Promise<TrackAnalysisData | null>;
@@ -397,16 +398,15 @@ const localWeights = reactive<Record<WeightKey, number>>({
 const localDiversity = ref(0.3);
 const localDepth = ref(1);
 
+// Use effective weights (preset defaults merged with overrides) for slider display
 watch(
-  () => props.weightOverrides,
-  (overrides) => {
-    if (overrides && Object.keys(overrides).length > 0) {
+  () => props.effectiveWeights,
+  (weights) => {
+    if (weights && Object.keys(weights).length > 0) {
       for (const group of WEIGHT_GROUPS) {
-        localWeights[group.key] =
-          group.key in overrides ? overrides[group.key] : 1.0;
+        localWeights[group.key] = group.key in weights ? weights[group.key] : 1.0;
       }
     } else {
-      // Reset all to defaults when overrides are cleared (e.g. preset change)
       for (const group of WEIGHT_GROUPS) {
         localWeights[group.key] = 1.0;
       }

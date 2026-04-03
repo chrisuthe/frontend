@@ -35,6 +35,7 @@
       :preset="currentPreset"
       :available-presets="availablePresets"
       :weight-overrides="sessionState?.weight_overrides"
+      :effective-weights="sessionState?.effective_weights"
       :diversity-override="sessionState?.diversity_override"
       :depth-override="sessionState?.depth_override"
       :analysis-source="sessionState?.aa_provider_domain"

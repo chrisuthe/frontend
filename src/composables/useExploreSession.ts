@@ -56,6 +56,7 @@ export interface ExploreSessionState {
   preset?: string;
   available_presets?: string[];
   weight_overrides?: Record<string, number>;
+  effective_weights?: Record<string, number>;
   diversity_override?: number | null;
   depth_override?: number | null;
   aa_provider_domain?: string;
