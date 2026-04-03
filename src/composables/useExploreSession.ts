@@ -58,6 +58,7 @@ export interface ExploreSessionState {
   weight_overrides?: Record<string, number>;
   diversity_override?: number | null;
   depth_override?: number | null;
+  aa_provider_domain?: string;
   resumable?: boolean;
   last_mode?: string;
   last_seed_track_id?: string;
@@ -307,6 +308,23 @@ export function useExploreSession() {
     }
   }
 
+  async function switchSource(queueId: string, domain: string) {
+    try {
+      // Switch the similarity index to the new provider
+      await api.sendCommand<{ status: string; index_size: number }>(
+        "sonic_analysis/switch_provider",
+        { domain },
+      );
+      if (sessionState.value) {
+        sessionState.value.aa_provider_domain = domain;
+      }
+      // Refresh the queue with new tracks from the switched provider
+      await setPreset(queueId, sessionState.value?.preset ?? "balanced");
+    } catch (e) {
+      error.value = `Failed to switch analysis source: ${e}`;
+    }
+  }
+
   async function setAdvanced(
     queueId: string,
     settings: {
@@ -387,6 +405,7 @@ export function useExploreSession() {
     vote,
     skip,
     setPreset,
+    switchSource,
     setAdvanced,
     removeTrack,
     fetchTrackAnalysis,

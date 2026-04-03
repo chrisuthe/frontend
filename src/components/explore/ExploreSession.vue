@@ -103,6 +103,25 @@
           </select>
         </div>
 
+        <!-- Analysis Source -->
+        <div class="flex-shrink-0">
+          <label
+            for="source-select"
+            class="block text-xs text-muted-foreground mb-1"
+          >
+            Analysis Source
+          </label>
+          <select
+            id="source-select"
+            :value="analysisSource"
+            class="rounded-md border bg-background px-2 py-1.5 text-xs cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary"
+            @change="onSourceChange"
+          >
+            <option value="sonic_analysis">Librosa</option>
+            <option value="essentia_analysis">Essentia</option>
+          </select>
+        </div>
+
         <!-- Advanced toggle + inline panel -->
         <div class="flex-1 min-w-0">
           <button
@@ -341,6 +360,7 @@ const props = defineProps<{
   queueId?: string;
   preset?: string;
   availablePresets?: string[];
+  analysisSource?: string;
   weightOverrides?: Record<string, number>;
   diversityOverride?: number | null;
   depthOverride?: number | null;
@@ -352,6 +372,7 @@ const emit = defineEmits<{
   skip: [];
   stop: [];
   "set-preset": [preset: string];
+  "switch-source": [domain: string];
   "set-advanced": [
     settings: {
       weights: Record<string, number>;
@@ -423,6 +444,11 @@ function presetLabel(p: string): string {
 function onPresetChange(event: Event) {
   const value = (event.target as HTMLSelectElement).value;
   emit("set-preset", value);
+}
+
+function onSourceChange(event: Event) {
+  const value = (event.target as HTMLSelectElement).value;
+  emit("switch-source", value);
 }
 
 // -- Track Analysis state --

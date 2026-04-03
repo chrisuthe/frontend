@@ -37,11 +37,13 @@
       :weight-overrides="sessionState?.weight_overrides"
       :diversity-override="sessionState?.diversity_override"
       :depth-override="sessionState?.depth_override"
+      :analysis-source="sessionState?.aa_provider_domain"
       :fetch-track-analysis="onFetchTrackAnalysis"
       @vote="onVote"
       @skip="onSkip"
       @stop="onStop"
       @set-preset="onSetPreset"
+      @switch-source="onSwitchSource"
       @set-advanced="onSetAdvanced"
       @remove-track="onRemoveTrack"
     />
@@ -91,6 +93,7 @@ const {
   availablePresets,
   setPreset,
   setAdvanced,
+  switchSource,
   removeTrack,
   fetchTrackAnalysis,
   fetchStatus,
@@ -148,6 +151,12 @@ async function onSkip() {
 async function onStop() {
   if (activeQueueId.value) {
     await stopSession(activeQueueId.value);
+  }
+}
+
+async function onSwitchSource(domain: string) {
+  if (activeQueueId.value) {
+    await switchSource(activeQueueId.value, domain);
   }
 }
 
