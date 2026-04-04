@@ -348,6 +348,7 @@ const WEIGHT_GROUPS = [
   { key: "loudness", label: "Loudness" },
   { key: "timbre", label: "Tone & Texture" },
   { key: "regularity", label: "Groove" },
+  { key: "mood", label: "Mood & Character" },
   { key: "tonal", label: "Key & Harmony" },
   { key: "dynamics", label: "Dynamics" },
 ] as const;
@@ -392,6 +393,7 @@ const localWeights = reactive<Record<WeightKey, number>>({
   loudness: 1.0,
   timbre: 1.0,
   regularity: 1.0,
+  mood: 1.0,
   tonal: 1.0,
   dynamics: 1.0,
 });
@@ -404,7 +406,8 @@ watch(
   (weights) => {
     if (weights && Object.keys(weights).length > 0) {
       for (const group of WEIGHT_GROUPS) {
-        localWeights[group.key] = group.key in weights ? weights[group.key] : 1.0;
+        localWeights[group.key] =
+          group.key in weights ? weights[group.key] : 1.0;
       }
     } else {
       for (const group of WEIGHT_GROUPS) {
