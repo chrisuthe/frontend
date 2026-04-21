@@ -292,7 +292,7 @@
                 class="flex justify-between"
               >
                 <span class="text-muted-foreground">{{ group }}</span>
-                <span>{{ (dist as number).toFixed(4) }}</span>
+                <span>{{ dist != null ? (dist as number).toFixed(4) : "—" }}</span>
               </div>
             </div>
 
