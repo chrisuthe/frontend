@@ -783,6 +783,17 @@
         "artist_name": "Album artist",
         "artist_name_desc": "Album artist (descending)"
     },
+    "sonic_analysis": {
+        "status": {
+            "title": "Sonic Analysis Engine",
+            "unavailable": "Status unavailable",
+            "clap_model_loaded": "Perceptual scalars (CLAP)",
+            "text_search_enabled": "Text search enabled",
+            "text_search_disabled": "Text search disabled",
+            "tracks_indexed": "{count} tracks indexed",
+            "tracks_indexed_of": "{indexed} \/ {total} tracks indexed"
+        }
+    },
     "state": {
         "idle": "idle",
         "off": "off",

@@ -76,6 +76,11 @@
       </v-card>
     </div>
 
+    <SonicAnalysisStatusPanel
+      v-if="config?.domain === 'sonic_analysis'"
+      class="mb-4"
+    />
+
     <edit-config
       v-if="config"
       :config-entries="allConfigEntries"
@@ -139,6 +144,7 @@
 
 <script setup lang="ts">
 import ProviderIcon from "@/components/ProviderIcon.vue";
+import SonicAnalysisStatusPanel from "@/components/settings/SonicAnalysisStatusPanel.vue";
 import { markdownToHtml } from "@/helpers/utils";
 import { api } from "@/plugins/api";
 import {
