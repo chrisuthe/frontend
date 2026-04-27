@@ -80,6 +80,10 @@
       v-if="config?.domain === 'sonic_analysis'"
       class="mb-4"
     />
+    <SonicSimilarityStatusPanel
+      v-if="config?.domain === 'sonic_similarity'"
+      class="mb-4"
+    />
 
     <edit-config
       v-if="config"
@@ -145,6 +149,7 @@
 <script setup lang="ts">
 import ProviderIcon from "@/components/ProviderIcon.vue";
 import SonicAnalysisStatusPanel from "@/components/settings/SonicAnalysisStatusPanel.vue";
+import SonicSimilarityStatusPanel from "@/components/settings/SonicSimilarityStatusPanel.vue";
 import { markdownToHtml } from "@/helpers/utils";
 import { api } from "@/plugins/api";
 import {

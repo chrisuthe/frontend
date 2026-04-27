@@ -794,6 +794,22 @@
             "tracks_indexed_of": "{indexed} \/ {total} tracks indexed"
         }
     },
+    "sonic_similarity": {
+        "status": {
+            "title": "Sonic Similarity Engine",
+            "unavailable": "Status unavailable",
+            "reading_from": "Reading from: {domain}",
+            "tracks_searchable": "tracks searchable",
+            "signatures_cached": "({count} in memory)",
+            "normalization_ready": "Normalization ready",
+            "normalization_pending": "Building corpus stats…",
+            "coverage_label": "Coverage",
+            "coverage_hint": "Some tracks have missing required fields and get skipped from the corpus to avoid poisoning z-score normalization.",
+            "rebuild_index": "Rebuild Index",
+            "rebuild_started": "Index rebuild started",
+            "rebuild_failed": "Failed to rebuild index"
+        }
+    },
     "state": {
         "idle": "idle",
         "off": "off",
