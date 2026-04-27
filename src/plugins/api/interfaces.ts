@@ -779,6 +779,29 @@ export interface LoudnessMeasurement {
   target_offset: number;
 }
 
+// Generic status shape exposed by audio analysis providers via `<domain>/status`.
+// Fields are optional because providers report only the metrics they implement;
+// consumers render whichever keys are present and hide the rest.
+export interface AaProviderStatus {
+  provider_loaded?: boolean;
+  analyzed_tracks_count?: number;
+  analysis_version?: number;
+}
+
+export interface SonicAnalysisStatus extends AaProviderStatus {
+  clap_model_loaded?: boolean;
+  text_search_enabled?: boolean;
+  text_search_index_size?: number;
+  text_search_total_count?: number;
+}
+
+export interface SonicSimilarityStatus {
+  aa_provider_domain?: string;
+  index_size?: number;
+  cached_signatures?: number;
+  has_corpus_stats?: boolean;
+}
+
 export interface StreamMetadata {
   // mandatory fields
   title: string;

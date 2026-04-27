@@ -7,6 +7,7 @@ import type { ITransport } from "../remote/transport";
 import { WebSocketTransport } from "../remote/websocket-transport";
 import { getDeviceName } from "./helpers";
 import {
+  type AaProviderStatus,
   type Album,
   type Artist,
   type AuthToken,
@@ -25,6 +26,8 @@ import {
   type QueueItem,
   type Radio,
   type ServerInfoMessage,
+  type SonicAnalysisStatus,
+  type SonicSimilarityStatus,
   type SuccessResultMessage,
   type TaskSchedule,
   type Track,
@@ -1324,6 +1327,32 @@ export class MusicAssistantApi {
 
   public async getRecommendations(): Promise<RecommendationFolder[]> {
     return this.sendCommand("music/recommendations");
+  }
+
+  public async getAaProviderStatus(domain: string): Promise<AaProviderStatus> {
+    return this.sendCommand<AaProviderStatus>(`${domain}/status`);
+  }
+
+  public async getSonicAnalysisStatus(): Promise<SonicAnalysisStatus> {
+    return this.sendCommand<SonicAnalysisStatus>("sonic_analysis/status");
+  }
+
+  public async getSonicSimilarityStatus(): Promise<SonicSimilarityStatus> {
+    return this.sendCommand<SonicSimilarityStatus>("sonic_similarity/status");
+  }
+
+  public async getSonicSimilar(
+    itemIds: string[],
+    blendMode: "union" | "intersection" = "union",
+  ): Promise<Track[]> {
+    return this.sendCommand<Track[]>("sonic_similarity/similar", {
+      item_ids: itemIds,
+      blend_mode: blendMode,
+    });
+  }
+
+  public async rebuildSonicSimilarityIndex(): Promise<void> {
+    return this.sendCommand("sonic_similarity/rebuild_index");
   }
 
   public markItemPlayed(
