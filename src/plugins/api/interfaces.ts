@@ -802,6 +802,23 @@ export interface SonicSimilarityStatus {
   has_corpus_stats?: boolean;
 }
 
+export interface SonicSimilarItem {
+  item_id: string;
+  provider: string;
+  distance: number;
+  generation: number;
+  name?: string;
+  artist?: string;
+}
+
+export interface SonicSimilarResponse {
+  analyzed: boolean;
+  seed_track_ids: string[];
+  blend_mode: string;
+  depth: number;
+  items: SonicSimilarItem[];
+}
+
 export interface StreamMetadata {
   // mandatory fields
   title: string;

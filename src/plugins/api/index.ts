@@ -27,6 +27,7 @@ import {
   type Radio,
   type ServerInfoMessage,
   type SonicAnalysisStatus,
+  type SonicSimilarResponse,
   type SonicSimilarityStatus,
   type SuccessResultMessage,
   type TaskSchedule,
@@ -1343,11 +1344,13 @@ export class MusicAssistantApi {
 
   public async getSonicSimilar(
     itemIds: string[],
-    blendMode: "union" | "intersection" = "union",
-  ): Promise<Track[]> {
-    return this.sendCommand<Track[]>("sonic_similarity/similar", {
+    blendMode: "union" | "centroid" = "centroid",
+    limit?: number,
+  ): Promise<SonicSimilarResponse> {
+    return this.sendCommand<SonicSimilarResponse>("sonic_similarity/similar", {
       item_ids: itemIds,
       blend_mode: blendMode,
+      ...(limit !== undefined ? { limit } : {}),
     });
   }
 
