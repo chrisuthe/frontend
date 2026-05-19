@@ -790,9 +790,6 @@ export interface AaProviderStatus {
 
 export interface SonicAnalysisStatus extends AaProviderStatus {
   clap_model_loaded?: boolean;
-  text_search_enabled?: boolean;
-  text_search_index_size?: number;
-  text_search_total_count?: number;
 }
 
 export interface SonicSimilarityStatus {

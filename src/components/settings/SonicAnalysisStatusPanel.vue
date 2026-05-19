@@ -24,44 +24,6 @@
           />
           <span>{{ $t("sonic_analysis.status.clap_model_loaded") }}</span>
         </div>
-
-        <div v-if="status.text_search_enabled !== undefined" class="status-row">
-          <v-icon
-            :icon="
-              status.text_search_enabled
-                ? 'mdi-check-circle'
-                : 'mdi-circle-outline'
-            "
-            :color="status.text_search_enabled ? 'success' : 'grey'"
-            size="18"
-          />
-          <span>
-            {{
-              status.text_search_enabled
-                ? $t("sonic_analysis.status.text_search_enabled")
-                : $t("sonic_analysis.status.text_search_disabled")
-            }}
-          </span>
-        </div>
-
-        <div
-          v-if="status.text_search_index_size !== undefined"
-          class="status-row"
-        >
-          <v-icon icon="mdi-database-outline" size="18" />
-          <span>
-            {{
-              status.text_search_total_count !== undefined
-                ? $t("sonic_analysis.status.tracks_indexed_of", {
-                    indexed: status.text_search_index_size,
-                    total: status.text_search_total_count,
-                  })
-                : $t("sonic_analysis.status.tracks_indexed", {
-                    count: status.text_search_index_size,
-                  })
-            }}
-          </span>
-        </div>
       </div>
     </div>
   </v-card>

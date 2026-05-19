@@ -792,11 +792,7 @@
         "status": {
             "title": "Sonic Analysis Engine",
             "unavailable": "Status unavailable",
-            "clap_model_loaded": "Perceptual scalars (CLAP)",
-            "text_search_enabled": "Text search enabled",
-            "text_search_disabled": "Text search disabled",
-            "tracks_indexed": "{count} tracks indexed",
-            "tracks_indexed_of": "{indexed} \/ {total} tracks indexed"
+            "clap_model_loaded": "Perceptual scalars (CLAP)"
         }
     },
     "sonic_similarity": {
