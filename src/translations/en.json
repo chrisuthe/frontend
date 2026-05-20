@@ -749,12 +749,7 @@
         "genre_table_rows_per_page": "Rows per page",
         "genre_table_page_info": "{0}–{1} of {2}",
         "missing_players_hint": "Missing players? {0}",
-        "add_player_providers": "Add more player providers",
-        "aa_provider": {
-            "loaded": "Provider loaded",
-            "not_loaded": "Provider not loaded",
-            "tracks_analyzed": "{count} tracks analyzed"
-        }
+        "add_player_providers": "Add more player providers"
     },
     "show_info": "Show info",
     "show_select_boxes": "Show selection boxes",

@@ -97,38 +97,46 @@ import { toast } from "vue-sonner";
 import { api } from "@/plugins/api";
 import { $t } from "@/plugins/i18n";
 import type {
-  SonicAnalysisStatus,
+  AaProviderCoverage,
   SonicSimilarityStatus,
 } from "@/plugins/api/interfaces";
 import { calculateCoveragePercent } from "@/helpers/sonicSimilarity";
 
 const ssStatus = ref<SonicSimilarityStatus | null>(null);
-const aaStatus = ref<SonicAnalysisStatus | null>(null);
+const aaCoverage = ref<AaProviderCoverage | null>(null);
 const loading = ref(true);
 const error = ref(false);
 const rebuilding = ref(false);
 
-const coveragePercent = computed(() =>
-  calculateCoveragePercent(
+// Coverage is index_size over the upstream AA provider's full candidate pool
+// (analyzed + pending). The denominator comes from audio_analysis/coverage on
+// whichever provider sonic_similarity reports as its source, so this works
+// regardless of which AA backend is wired in.
+const coveragePercent = computed(() => {
+  const cov = aaCoverage.value;
+  if (!cov) return null;
+  return calculateCoveragePercent(
     ssStatus.value?.index_size,
-    aaStatus.value?.analyzed_tracks_count,
-  ),
-);
+    cov.analyzed + cov.pending,
+  );
+});
 
 const refresh = async () => {
-  const [ssResult, aaResult] = await Promise.allSettled([
-    api.getSonicSimilarityStatus(),
-    api.getSonicAnalysisStatus(),
-  ]);
-
-  if (ssResult.status === "fulfilled") {
-    ssStatus.value = ssResult.value;
-  } else {
+  try {
+    ssStatus.value = await api.getSonicSimilarityStatus();
+  } catch {
     error.value = true;
+    return;
   }
 
-  if (aaResult.status === "fulfilled") {
-    aaStatus.value = aaResult.value;
+  const aaDomain = ssStatus.value?.aa_provider_domain;
+  if (!aaDomain) return;
+
+  try {
+    aaCoverage.value = await api.getAaProviderCoverage(aaDomain);
+  } catch {
+    // ProviderUnavailableError or transient failure — keep the rest of the
+    // panel visible and just omit the coverage section.
   }
 };
 

@@ -7,7 +7,7 @@ import type { ITransport } from "../remote/transport";
 import { WebSocketTransport } from "../remote/websocket-transport";
 import { getDeviceName } from "./helpers";
 import {
-  type AaProviderStatus,
+  type AaProviderCoverage,
   type Album,
   type Artist,
   type AuthToken,
@@ -1330,12 +1330,18 @@ export class MusicAssistantApi {
     return this.sendCommand("music/recommendations");
   }
 
-  public async getAaProviderStatus(domain: string): Promise<AaProviderStatus> {
-    return this.sendCommand<AaProviderStatus>(`${domain}/status`);
+  public async getSonicAnalysisStatus(): Promise<SonicAnalysisStatus> {
+    return this.sendCommand<SonicAnalysisStatus>("audio_analysis/status", {
+      aa_domain: "sonic_analysis",
+    });
   }
 
-  public async getSonicAnalysisStatus(): Promise<SonicAnalysisStatus> {
-    return this.sendCommand<SonicAnalysisStatus>("sonic_analysis/status");
+  public async getAaProviderCoverage(
+    aa_domain: string,
+  ): Promise<AaProviderCoverage> {
+    return this.sendCommand<AaProviderCoverage>("audio_analysis/coverage", {
+      aa_domain,
+    });
   }
 
   public async getSonicSimilarityStatus(): Promise<SonicSimilarityStatus> {

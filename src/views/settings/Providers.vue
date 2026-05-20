@@ -75,52 +75,6 @@
             <span v-else class="provider-type-badge">
               {{ getProviderTypeTitle(item.type) }}
             </span>
-            <div
-              v-if="
-                item.type === ProviderType.AUDIO_ANALYSIS &&
-                aaProviderStatuses[item.domain]
-              "
-              class="aa-status-inline"
-            >
-              <v-icon
-                v-if="aaProviderStatuses[item.domain].provider_loaded === true"
-                icon="mdi-check-circle"
-                size="14"
-                color="success"
-                :title="$t('settings.aa_provider.loaded')"
-              />
-              <v-icon
-                v-else-if="
-                  aaProviderStatuses[item.domain].provider_loaded === false
-                "
-                icon="mdi-alert-circle"
-                size="14"
-                color="warning"
-                :title="$t('settings.aa_provider.not_loaded')"
-              />
-              <span
-                v-if="
-                  typeof aaProviderStatuses[item.domain]
-                    .analyzed_tracks_count === 'number'
-                "
-                class="aa-status-count"
-              >
-                {{
-                  $t("settings.aa_provider.tracks_analyzed", {
-                    count:
-                      aaProviderStatuses[item.domain].analyzed_tracks_count,
-                  })
-                }}
-              </span>
-              <v-chip
-                v-if="aaProviderStatuses[item.domain].analysis_version != null"
-                size="x-small"
-                variant="flat"
-                density="compact"
-              >
-                v{{ aaProviderStatuses[item.domain].analysis_version }}
-              </v-chip>
-            </div>
           </div>
         </template>
 
@@ -274,53 +228,6 @@
             {{ getProviderName(item) }}
           </v-card-title>
 
-          <v-card-text
-            v-if="
-              item.type === ProviderType.AUDIO_ANALYSIS &&
-              aaProviderStatuses[item.domain]
-            "
-            class="aa-status-card py-1"
-          >
-            <div class="aa-status-inline">
-              <v-icon
-                v-if="aaProviderStatuses[item.domain].provider_loaded === true"
-                icon="mdi-check-circle"
-                size="14"
-                color="success"
-              />
-              <v-icon
-                v-else-if="
-                  aaProviderStatuses[item.domain].provider_loaded === false
-                "
-                icon="mdi-alert-circle"
-                size="14"
-                color="warning"
-              />
-              <span
-                v-if="
-                  typeof aaProviderStatuses[item.domain]
-                    .analyzed_tracks_count === 'number'
-                "
-                class="aa-status-count"
-              >
-                {{
-                  $t("settings.aa_provider.tracks_analyzed", {
-                    count:
-                      aaProviderStatuses[item.domain].analyzed_tracks_count,
-                  })
-                }}
-              </span>
-              <v-chip
-                v-if="aaProviderStatuses[item.domain].analysis_version != null"
-                size="x-small"
-                variant="flat"
-                density="compact"
-              >
-                v{{ aaProviderStatuses[item.domain].analysis_version }}
-              </v-chip>
-            </div>
-          </v-card-text>
-
           <!-- Provider error warning for card view -->
           <v-card-text
             v-if="item.enabled && item.last_error"
@@ -383,7 +290,6 @@ import { useBackgroundTasks } from "@/composables/useBackgroundTasks";
 import { openLinkInNewTab } from "@/helpers/utils";
 import { api } from "@/plugins/api";
 import {
-  type AaProviderStatus,
   EventType,
   ProviderConfig,
   ProviderFeature,
@@ -425,7 +331,6 @@ const addProviderLabel = computed(() => {
 
 // local refs
 const providerConfigs = ref<ProviderConfig[]>([]);
-const aaProviderStatuses = ref<Record<string, AaProviderStatus>>({});
 const searchQuery = ref<string>("");
 const showAddProviderDialog = ref<boolean>(false);
 const addProviderInitialType = ref<string | undefined>(undefined);
@@ -453,30 +358,6 @@ const loadItems = async function () {
     return;
   }
   providerConfigs.value = await api.getProviderConfigs();
-  void loadAaProviderStatuses();
-};
-
-const loadAaProviderStatuses = async function () {
-  const aaProviders = providerConfigs.value.filter(
-    (p) => p.type === ProviderType.AUDIO_ANALYSIS,
-  );
-  if (aaProviders.length === 0) return;
-
-  const results = await Promise.allSettled(
-    aaProviders.map(async (p) => {
-      const status = await api.getAaProviderStatus(p.domain);
-      return [p.domain, status] as const;
-    }),
-  );
-
-  const next: Record<string, AaProviderStatus> = {};
-  for (const r of results) {
-    if (r.status === "fulfilled") {
-      const [domain, status] = r.value;
-      next[domain] = status;
-    }
-  }
-  aaProviderStatuses.value = next;
 };
 
 const removeProvider = function (providerInstanceId: string) {
@@ -898,23 +779,5 @@ const getAllFilteredProviders = function () {
   font-size: 14px;
   color: rgba(var(--v-theme-on-surface), 0.5);
   line-height: 1.4;
-}
-
-.aa-status-inline {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 4px;
-  font-size: 0.75rem;
-  flex-wrap: wrap;
-}
-
-.aa-status-count {
-  color: rgba(var(--v-theme-on-surface), 0.7);
-}
-
-.aa-status-card {
-  padding-top: 0 !important;
-  padding-bottom: 0 !important;
 }
 </style>

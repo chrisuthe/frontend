@@ -779,13 +779,22 @@ export interface LoudnessMeasurement {
   target_offset: number;
 }
 
-// Generic status shape exposed by audio analysis providers via `<domain>/status`.
+// Generic status shape returned by `audio_analysis/status` with an `aa_domain`.
 // Fields are optional because providers report only the metrics they implement;
 // consumers render whichever keys are present and hide the rest.
 export interface AaProviderStatus {
   provider_loaded?: boolean;
   analyzed_tracks_count?: number;
   analysis_version?: number;
+}
+
+// Returned by `audio_analysis/coverage` with an `aa_domain`. Total candidates
+// are derived as `analyzed + pending`.
+export interface AaProviderCoverage {
+  analyzed: number;
+  pending: number;
+  stale_version: number;
+  analysis_version: number;
 }
 
 export interface SonicAnalysisStatus extends AaProviderStatus {
