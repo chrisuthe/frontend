@@ -133,14 +133,16 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
 import {
+  VOICE_PROCESSING,
+  type ProbeError,
+} from "@/composables/sendspin-sync/audioCapture";
+import {
   PROBE_CHECKS,
   summarizeProbe,
   useMicrophoneProbe,
-  VOICE_PROCESSING,
   type CheckStatus,
   type MicrophoneProbeReport,
   type ProbeCheckId,
-  type ProbeError,
 } from "@/composables/sendspin-sync/useMicrophoneProbe";
 import { copyToClipboard } from "@/helpers/utils";
 import { $t } from "@/plugins/i18n";
