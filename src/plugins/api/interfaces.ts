@@ -1852,3 +1852,21 @@ export interface AIRadioSession {
 export interface AIRadioStatus {
   sessions: AIRadioSession[];
 }
+
+// Sendspin Sync interfaces
+
+export interface CalibrationPlayer {
+  player_id: string;
+  name: string;
+  // whether the speaker is busy with the user's own content, so a client can warn
+  // before a session takes it over
+  busy: boolean;
+}
+
+export interface CalibrationSessionState {
+  anchor_player_id: string;
+  queue_id: string;
+  player_ids: string[];
+  soloed_player_id: string | null;
+  streaming: boolean;
+}

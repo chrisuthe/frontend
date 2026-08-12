@@ -176,6 +176,12 @@ export async function holdScreenAwake(
   }
 }
 
+/**
+ * Reduce anything thrown into a reportable failure.
+ *
+ * The name is kept because it is what tells a reader which failure this was —
+ * `NotAllowedError` and `NotFoundError` call for completely different advice.
+ */
 export function describeError(error: unknown): ProbeError {
   if (error instanceof Error)
     return { name: error.name, message: error.message };
