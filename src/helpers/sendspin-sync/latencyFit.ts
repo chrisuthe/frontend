@@ -26,6 +26,13 @@
  * inside a measurement, then from one measurement to the next. The integer
  * number of periods that unwrapping introduces is common to every sample, so `c`
  * absorbs it and it never has to be known.
+ *
+ * Unwrapping from one measurement to the next is the one step with more than one
+ * arithmetically valid answer: the phone hears nothing for tens of seconds
+ * between speakers, and the branches either side of that silence differ by
+ * exactly one period. `d` absorbs a wrong branch without complaint, so the fit
+ * alone cannot tell them apart. Physics can — a phone's audio clock cannot be
+ * thousands of ppm out — so the branch is chosen on the rate it implies.
  */
 
 import { CHIRP_PERIOD_SECONDS } from "./chirp";
@@ -65,6 +72,13 @@ export interface LatencyFit {
   rateErrorPpm: number;
   /** Robust spread of the residuals across every used sample, in milliseconds. */
   residualMs: number;
+  /**
+   * The same spread taken one speaker at a time, in milliseconds.
+   *
+   * One figure for the run cannot tell a single spoiled speaker from detection
+   * that was poor everywhere, and those want different things done about them.
+   */
+  scatterMs: Record<string, number>;
   /**
    * The longest gap between two readings of one speaker, or `null` when no
    * speaker was measured twice.
@@ -115,6 +129,17 @@ export interface LatencyFit {
  */
 const RESIDUAL_FLOOR_SECONDS = 50e-6;
 
+/**
+ * And no further apart than this, however wide the visit's own spread is.
+ *
+ * The threshold is scaled off the data, so a badly detected visit widens it
+ * until it swallows the very arrivals it exists to catch: at the 17 ms of spread
+ * a spoiled walk produces it reaches 75 ms and rejects nothing. Sound covers two
+ * thirds of a metre in this time and the matched filter resolves forty times
+ * finer, so past here the pass stops taking the data's word for what is normal.
+ */
+const RESIDUAL_CEILING_SECONDS = 2e-3;
+
 /** How many robust standard deviations an arrival may sit from its visit. */
 const OUTLIER_SIGMAS = 3;
 
@@ -122,27 +147,59 @@ const OUTLIER_SIGMAS = 3;
 const MIN_SAMPLES_TO_JUDGE = 5;
 
 /**
+ * The furthest a phone's audio clock can plausibly sit from the server's.
+ *
+ * Consumer crystals are specified inside ±100 ppm, and the microphone probe
+ * already calls 1000 ppm degraded while still letting the run proceed — so the
+ * line past which a rate stops being a reading has to sit above what the rest of
+ * the flow tolerates. Twice that, and twenty times a healthy clock, refuses
+ * nothing real while still catching a fit that has swallowed a whole chirp
+ * period: half a second misassigned across a two-and-a-half-minute walk implies
+ * some 3300 ppm.
+ */
+export const MAX_PLAUSIBLE_RATE_PPM = 2000;
+
+/**
+ * How many times over the branch search may correct a misassignment.
+ *
+ * One gap unwrapped onto the wrong chirp is a walk that went quiet at an awkward
+ * moment. Several is a recording nothing sensible can be made of, and hunting
+ * further only finds a combination that happens to look possible.
+ */
+const MAX_BRANCH_ROUNDS = 2;
+
+/**
  * Fit the arrivals, or return `null` when they cannot determine the model.
  *
  * Arrivals from a single instant, or too few of them to pin down both the clock
  * rate and every offset, leave the system singular; reporting nothing is the
  * only honest answer to that.
+ *
+ * A fit whose rate no clock could have is still returned rather than withheld:
+ * it is the evidence for refusing the run, and `runVerdict` is where the refusal
+ * is decided. Read {@link LatencyFit.rateErrorPpm} against
+ * {@link MAX_PLAUSIBLE_RATE_PPM} before trusting anything else here.
  */
 export function fitLatencies(samples: ArrivalSample[]): LatencyFit | null {
   if (samples.length < 3) return null;
 
-  const rows = unwrap(samples);
-  const players = [...new Set(rows.map((row) => row.sample.playerId))];
+  const ordered = [...samples].sort((left, right) => left.at - right.at);
+  const visits = describeVisits(ordered);
+  const players = [...new Set(ordered.map((sample) => sample.playerId))];
   // The first speaker anchors the result: its offset is fixed at zero, so only
   // the others carry a free parameter.
   const free = players.slice(1);
+  const reference = ordered[0].at;
 
-  const used = rows.filter((row) => !row.outlier);
-  if (used.length < free.length + 3) return null;
+  const baseline = evaluate(visits, chain(visits), reference, free);
+  if (!baseline) return null;
 
-  const fit = solve(used, free);
-  if (!fit) return null;
-  return report(rows, used, fit, players);
+  return report(
+    baseline.plausible
+      ? baseline
+      : reconcile(visits, reference, free, baseline),
+    players,
+  );
 }
 
 /** Reduce a span of seconds to its phase within the chirp period. */
@@ -162,63 +219,198 @@ interface FitRow {
   outlier: boolean;
 }
 
+/** One visit's arrivals as phases, with the arrivals that disagree marked. */
+interface VisitPhases {
+  samples: ArrivalSample[];
+  /**
+   * Phase of the visit's first arrival, which {@link local} is measured from.
+   *
+   * Pinning a visit to its own first arrival keeps one bad detection to itself
+   * rather than shifting everything captured after it.
+   */
+  pivot: number;
+  /** Each arrival's phase relative to {@link pivot}. */
+  local: number[];
+  /** Where the visit's arrivals sit among {@link local}. */
+  centre: number;
+  outliers: boolean[];
+}
+
 /**
- * Resolve every arrival's phase into one continuous run of values, and mark the
- * arrivals that disagree with the rest of their visit.
- *
- * Wrapping each arrival against a single fixed reference would be simpler and
- * wrong: the drift term grows without bound, so on a phone whose clock is off by
- * the 1000 ppm the microphone probe still calls merely degraded, the phase folds
- * through half a period after about four minutes and the fit returns a confident
- * wrong answer.
- *
- * Unwrapping against the nearest neighbour instead keeps every comparison short.
- * Inside a visit the arrivals span a few seconds, and consecutive visits are a
- * walk apart, so both steps stay far below the half-period at which the
- * ambiguity bites.
+ * Reduce each visit to phases, and mark the arrivals that disagree with the rest
+ * of their own visit.
  *
  * Outliers are judged inside a visit rather than against the finished fit,
  * because every arrival in a visit shares one speaker and one moment: a
  * reflection picked up instead of the direct sound stands out against its
  * neighbours, whereas against the global fit it has already dragged its own
  * speaker's offset towards itself and drags the honest arrivals out with it.
+ *
+ * Nothing here depends on how the visits are unwrapped against each other, so
+ * the branch search below can retry that step without redoing any of this.
  */
-function unwrap(samples: ArrivalSample[]): FitRow[] {
-  const ordered = [...samples].sort((left, right) => left.at - right.at);
-  const reference = ordered[0].at;
-  const rows: FitRow[] = [];
-
-  // Each visit is pinned to its own first arrival, so one bad detection shifts
-  // only itself rather than everything captured after it.
-  let previous: number | null = null;
-  for (const visit of groupByVisit(ordered)) {
-    const pivot = phaseOf(visit[0].at);
-    const local = visit.map((sample) =>
+function describeVisits(ordered: ArrivalSample[]): VisitPhases[] {
+  return groupByVisit(ordered).map((samples) => {
+    const pivot = phaseOf(samples[0].at);
+    const local = samples.map((sample) =>
       wrapToPeriod(phaseOf(sample.at) - pivot),
     );
-
     const centre = median(local);
-    // Annotated because `previous` is assigned from `base` further down, which
+
+    return {
+      samples,
+      pivot,
+      local,
+      centre,
+      outliers: findOutliers(local, centre),
+    };
+  });
+}
+
+/**
+ * How many whole periods to add to each visit, pinning each to the one before it.
+ *
+ * Wrapping every arrival against a single fixed reference would be simpler and
+ * wrong: the drift term grows without bound, so on a phone whose clock is off by
+ * the 1000 ppm the microphone probe still calls merely degraded, the phase folds
+ * through half a period after about four minutes and the fit returns a confident
+ * wrong answer. Chaining keeps every comparison to the length of one gap, where
+ * drift alone cannot reach the half period at which the ambiguity bites.
+ *
+ * What can reach it is the speakers. Consecutive visits differ by their offsets
+ * as well as by drift, and a speaker a couple of hundred milliseconds behind —
+ * an ordinary Bluetooth one — is most of the way there on its own. So this is
+ * where the fit starts, not where it finishes.
+ */
+function chain(visits: VisitPhases[]): number[] {
+  const periods: number[] = [];
+
+  let previous: number | null = null;
+  for (const visit of visits) {
+    // Annotated because `previous` is assigned from `count` below, which
     // otherwise makes the inference circular.
-    const periods: number =
+    const count: number =
       previous === null
         ? 0
-        : Math.round((previous - centre - pivot) / CHIRP_PERIOD_SECONDS);
-    const base: number = pivot + periods * CHIRP_PERIOD_SECONDS;
-    previous = base + centre;
+        : Math.round(
+            (previous - visit.centre - visit.pivot) / CHIRP_PERIOD_SECONDS,
+          );
+    periods.push(count);
+    previous = visit.pivot + count * CHIRP_PERIOD_SECONDS + visit.centre;
+  }
 
-    const outliers = findOutliers(local, centre);
-    visit.forEach((sample, index) => {
+  return periods;
+}
+
+/** One whole branch assignment, solved and judged. */
+interface Candidate {
+  /** Whole periods added to each visit, in the order they were captured. */
+  periods: number[];
+  rows: FitRow[];
+  used: FitRow[];
+  solution: Solution;
+  /** Robust spread of the used residuals, in seconds. */
+  residual: number;
+  /** Whether the clock rate this branch implies is one a real clock could have. */
+  plausible: boolean;
+}
+
+/** Unwrap by the given branch, fit it, and measure how well it came out. */
+function evaluate(
+  visits: VisitPhases[],
+  periods: number[],
+  reference: number,
+  free: string[],
+): Candidate | null {
+  const rows: FitRow[] = [];
+  visits.forEach((visit, index) => {
+    const base = visit.pivot + periods[index] * CHIRP_PERIOD_SECONDS;
+    visit.samples.forEach((sample, arrival) => {
       rows.push({
         sample,
         elapsed: sample.at - reference,
-        phase: base + local[index],
-        outlier: outliers[index],
+        phase: base + visit.local[arrival],
+        outlier: visit.outliers[arrival],
       });
     });
+  });
+
+  const used = rows.filter((row) => !row.outlier);
+  if (used.length < free.length + 3) return null;
+
+  const solution = solve(used, free);
+  if (!solution) return null;
+
+  return {
+    periods,
+    rows,
+    used,
+    solution,
+    residual: robustSpread(
+      used.map((row) => row.phase - predict(row, solution)),
+    ),
+    plausible: Math.abs(solution.drift) * 1e6 <= MAX_PLAUSIBLE_RATE_PPM,
+  };
+}
+
+/**
+ * Look for a branch the physics allows, once the chained one turns out not to be.
+ *
+ * A visit unwrapped onto the wrong chirp shifts every visit after it by the same
+ * whole period, so the corrections worth trying are exactly that: one period,
+ * either way, applied from one gap onwards. The fit cannot choose between them
+ * on how well they fit — a whole period is precisely what the drift term absorbs
+ * without complaint, which is how the wrong branch came to be reported in the
+ * first place — so the rate each one implies is what decides.
+ *
+ * Returns the best it found, which may still be impossible. A run with no
+ * possible branch at all is one to refuse, and saying so is the caller's job.
+ */
+function reconcile(
+  visits: VisitPhases[],
+  reference: number,
+  free: string[],
+  baseline: Candidate,
+): Candidate {
+  let best = baseline;
+
+  for (let round = 0; round < MAX_BRANCH_ROUNDS && !best.plausible; round++) {
+    let improved: Candidate | null = null;
+
+    for (let gap = 1; gap < visits.length; gap++)
+      for (const shift of [-1, 1]) {
+        const periods = best.periods.map((count, index) =>
+          index >= gap ? count + shift : count,
+        );
+        const candidate = evaluate(visits, periods, reference, free);
+        if (candidate && better(candidate, improved ?? best))
+          improved = candidate;
+      }
+
+    if (!improved) break;
+    best = improved;
   }
 
-  return rows;
+  return best;
+}
+
+/**
+ * Whether one branch beats another: possible first, then the tighter fit.
+ *
+ * A branch that fits the arrivals worse is never the answer, however possible
+ * the rate it implies — otherwise a genuinely broken clock would be handed a
+ * respectable-looking rate it does not have. The misassignment this search
+ * exists to undo costs nothing in fit, which is exactly why the rate has to
+ * break the tie.
+ *
+ * Fits that agree to within the detection floor are the same fit as far as the
+ * arrivals can say, so a difference smaller than that is not a reason to move.
+ */
+function better(candidate: Candidate, incumbent: Candidate): boolean {
+  if (candidate.residual > incumbent.residual + RESIDUAL_FLOOR_SECONDS)
+    return false;
+  if (candidate.plausible !== incumbent.plausible) return candidate.plausible;
+  return candidate.residual < incumbent.residual - RESIDUAL_FLOOR_SECONDS;
 }
 
 /**
@@ -231,9 +423,9 @@ function unwrap(samples: ArrivalSample[]): FitRow[] {
 function findOutliers(local: number[], centre: number): boolean[] {
   if (local.length < MIN_SAMPLES_TO_JUDGE) return local.map(() => false);
 
-  const spread = Math.max(
-    RESIDUAL_FLOOR_SECONDS,
-    1.4826 * median(local.map((value) => Math.abs(value - centre))),
+  const spread = Math.min(
+    RESIDUAL_CEILING_SECONDS,
+    Math.max(RESIDUAL_FLOOR_SECONDS, robustSpread(local)),
   );
   const limit = OUTLIER_SIGMAS * spread;
 
@@ -346,28 +538,21 @@ function predict(row: FitRow, fit: Solution): number {
   );
 }
 
-function report(
-  rows: FitRow[],
-  used: readonly FitRow[],
-  fit: Solution,
-  players: string[],
-): LatencyFit {
+function report(candidate: Candidate, players: string[]): LatencyFit {
+  const { rows, used, solution } = candidate;
+
   const offsetsMs: Record<string, number> = {};
   for (const playerId of players)
-    offsetsMs[playerId] = (fit.offsets.get(playerId) ?? 0) * 1000;
+    offsetsMs[playerId] = (solution.offsets.get(playerId) ?? 0) * 1000;
 
-  const residuals = used.map((row) => row.phase - predict(row, fit));
-  const centre = median(residuals);
-  const visits = summarizeVisits(rows, fit);
+  const visits = summarizeVisits(rows, solution);
 
   return {
     offsetsMs,
-    rateRatio: 1 + fit.drift,
-    rateErrorPpm: fit.drift * 1e6,
-    residualMs:
-      1.4826 *
-      median(residuals.map((value) => Math.abs(value - centre))) *
-      1000,
+    rateRatio: 1 + solution.drift,
+    rateErrorPpm: solution.drift * 1e6,
+    residualMs: candidate.residual * 1000,
+    scatterMs: speakerScatter(used, solution, players),
     ...bracket(visits, rows),
     runSpanSeconds: rows.reduce(
       (longest, row) => Math.max(longest, row.elapsed),
@@ -377,6 +562,24 @@ function report(
     used: used.length,
     rejected: rows.length - used.length,
   };
+}
+
+/** Each speaker's own arrivals against the fitted line, in milliseconds. */
+function speakerScatter(
+  used: readonly FitRow[],
+  fit: Solution,
+  players: string[],
+): Record<string, number> {
+  const residuals = new Map(
+    players.map((playerId) => [playerId, [] as number[]]),
+  );
+  for (const row of used)
+    residuals.get(row.sample.playerId)?.push(row.phase - predict(row, fit));
+
+  const scatterMs: Record<string, number> = {};
+  for (const [playerId, values] of residuals)
+    scatterMs[playerId] = robustSpread(values) * 1000;
+  return scatterMs;
 }
 
 function summarizeVisits(rows: FitRow[], fit: Solution): VisitFit[] {
@@ -459,6 +662,12 @@ function bracket(
     bracketSpanSeconds: span,
     bracketResidualMs: constraints >= 2 ? worst : null,
   };
+}
+
+/** Median absolute deviation, scaled to read as a standard deviation. */
+function robustSpread(values: readonly number[]): number {
+  const centre = median(values);
+  return 1.4826 * median(values.map((value) => Math.abs(value - centre)));
 }
 
 function median(values: readonly number[]): number {

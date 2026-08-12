@@ -10,9 +10,11 @@
  * with a run is the thing the user is told about.
  */
 
-import type { LatencyFit } from "./latencyFit";
+import { MAX_PLAUSIBLE_RATE_PPM, type LatencyFit } from "./latencyFit";
 
 export type RunVerdict =
+  /** The arrivals only fit a clock rate no clock could have. */
+  | "irreconcilable"
   /** A speaker the run set out to measure was never heard. */
   | "unmeasured"
   /** No speaker was measured twice, so the clock rate rests on seconds. */
@@ -60,6 +62,13 @@ export const MIN_BRACKET_FRACTION = 0.5;
 
 /** Judge a finished fit against the speakers the run set out to measure. */
 export function runVerdict(fit: LatencyFit, selected: string[]): RunVerdict {
+  // Ahead of everything, because it is not one thing wrong with the run: a rate
+  // this far out means the arrivals were reconciled onto the wrong chirp
+  // somewhere, and every offset that follows from them is meaningless rather
+  // than merely uncertain.
+  if (Math.abs(fit.rateErrorPpm) > MAX_PLAUSIBLE_RATE_PPM)
+    return "irreconcilable";
+
   if (selected.some((playerId) => !(playerId in fit.offsetsMs)))
     return "unmeasured";
 

@@ -1,6 +1,7 @@
 import { CHIRP_PERIOD_SECONDS } from "@/helpers/sendspin-sync/chirp";
 import {
   fitLatencies,
+  MAX_PLAUSIBLE_RATE_PPM,
   wrapToPeriod,
   type ArrivalSample,
 } from "@/helpers/sendspin-sync/latencyFit";
@@ -214,6 +215,89 @@ describe("fitLatencies", () => {
     // Measured on the phone's clock, so a ten minute walk reads 0.6 s long at
     // this drift — which is the whole reason the drift has to be fitted.
     expect(fit.bracketSpanSeconds!).toBeCloseTo(600.6, 1);
+  });
+
+  it("takes the branch a real clock could have, not the nearest one", () => {
+    // The walk that produced -3318.7 ppm on a phone. Three speakers spread over
+    // most of a chirp period — ordinary once one of them is on Bluetooth — and
+    // the anchor measured again 150 seconds after it was first heard. Pinning
+    // each visit to the one before it walks the phase up to 0.4 s by the third
+    // speaker, so the closing reading of the anchor lands a whole period out and
+    // the drift term swallows it: 0.5 s over 150 s is 3333 ppm.
+    const walk: Visit[] = [
+      { playerId: "living", fromChirp: 0 },
+      { playerId: "kitchen", fromChirp: 150 },
+      { playerId: "study", fromChirp: 250 },
+      { playerId: "living", fromChirp: 300 },
+    ];
+    const offsets = { living: 0, kitchen: 0.2, study: 0.4 };
+
+    const fit = fitLatencies(synthesize(walk, offsets, 5e-6))!;
+
+    expect(fit.rateErrorPpm).toBeCloseTo(5, 1);
+    expect(Math.abs(fit.rateErrorPpm)).toBeLessThan(MAX_PLAUSIBLE_RATE_PPM);
+    expect(fit.residualMs).toBeLessThan(0.001);
+    // A phase-only fit can only ever place an offset within the period, so the
+    // recovered figures are the true ones give or take a whole one.
+    for (const [playerId, offset] of Object.entries(offsets))
+      expect(wrapToPeriod(fit.offsetsMs[playerId] / 1000 - offset)).toBeCloseTo(
+        0,
+        6,
+      );
+  });
+
+  it("still reports an impossible rate the arrivals genuinely carry", () => {
+    // 5000 ppm across gaps short enough that nothing is misassigned: the fit is
+    // the only one the arrivals admit, and no branch shift fits them better. It
+    // comes back so the verdict can refuse the run and say why, rather than the
+    // panel quietly having nothing to show.
+    const walk: Visit[] = [
+      { playerId: "living", fromChirp: 0 },
+      { playerId: "kitchen", fromChirp: 80 },
+      { playerId: "living", fromChirp: 160 },
+    ];
+
+    const fit = fitLatencies(synthesize(walk, OFFSETS, 5000e-6))!;
+
+    expect(fit.rateErrorPpm).toBeCloseTo(5000, 0);
+    expect(Math.abs(fit.rateErrorPpm)).toBeGreaterThan(MAX_PLAUSIBLE_RATE_PPM);
+  });
+
+  it("reports each speaker's own scatter, not one figure for the run", () => {
+    const noise = jitter(11);
+    const samples = synthesize(WALK, OFFSETS, 40e-6).map((sample) =>
+      // Only the kitchen reading is spoiled, by ±5 ms of detection error.
+      sample.playerId === "kitchen"
+        ? { ...sample, at: sample.at + noise() * 1e-2 }
+        : sample,
+    );
+
+    const fit = fitLatencies(samples)!;
+
+    // Two orders of magnitude apart, which is the whole point: one figure for
+    // the run would report the median of these and name neither.
+    expect(fit.scatterMs.kitchen).toBeGreaterThan(1);
+    expect(fit.scatterMs.living).toBeLessThan(0.01);
+    expect(fit.scatterMs.study).toBeLessThan(0.01);
+  });
+
+  it("stops widening the outlier threshold once it would reject nothing", () => {
+    // Scaled off the visit's own spread alone, one badly detected arrival in
+    // five drags the threshold out past itself. The ceiling is what keeps the
+    // pass working on a recording that is merely poor rather than hopeless.
+    const noise = jitter(3);
+    const samples = synthesize(WALK, OFFSETS, 40e-6).map((sample, index) =>
+      // Four of the kitchen's ten arrivals land tens of milliseconds late, which
+      // is a reflection rather than the direct sound.
+      index >= 10 && index < 14
+        ? { ...sample, at: sample.at + 0.02 + noise() * 1e-2 }
+        : sample,
+    );
+
+    const fit = fitLatencies(samples)!;
+
+    expect(fit.rejected).toBe(4);
+    expect(fit.offsetsMs.kitchen).toBeCloseTo(12, 3);
   });
 
   it("reports nothing when the arrivals cannot determine the model", () => {
