@@ -15,30 +15,41 @@
         </EmptyHeader>
       </Empty>
 
-      <fieldset v-else class="space-y-0 divide-y border-t">
-        <legend class="sr-only">{{ $t(`${KEYS}.pick.legend`) }}</legend>
-        <div
-          v-for="player in players"
-          :key="player.player_id"
-          class="flex items-center gap-3 py-3"
-        >
-          <Checkbox
-            :id="`sendspin-sync-${player.player_id}`"
-            :model-value="selected.includes(player.player_id)"
-            :disabled="disabled"
-            @update:model-value="toggle(player.player_id, $event)"
-          />
-          <Label
+      <FieldSet v-else>
+        <FieldLegend variant="label" class="sr-only">
+          {{ $t(`${KEYS}.pick.legend`) }}
+        </FieldLegend>
+        <div class="space-y-1">
+          <!-- The for/id pair is what names the checkbox: it reads the text of
+               the label pointing at it, so a busy speaker is announced with its
+               badge. An aria-label here would replace that, not add to it. -->
+          <label
+            v-for="player in players"
+            :key="player.player_id"
             :for="`sendspin-sync-${player.player_id}`"
-            class="flex min-w-0 flex-1 items-center gap-2 font-normal"
+            class="flex min-h-9 items-center gap-2 rounded-md px-2 transition-colors"
+            :class="{
+              'bg-primary/10': selected.includes(player.player_id),
+              'hover:bg-accent/50 cursor-pointer': !disabled,
+              'cursor-not-allowed': disabled,
+            }"
           >
-            <span class="truncate">{{ player.name }}</span>
+            <span class="min-w-0 flex-1 truncate text-sm">
+              {{ player.name }}
+            </span>
             <Badge v-if="player.busy" variant="warning" class="shrink-0">
               {{ $t(`${KEYS}.pick.busy`) }}
             </Badge>
-          </Label>
+            <Checkbox
+              :id="`sendspin-sync-${player.player_id}`"
+              :model-value="selected.includes(player.player_id)"
+              :disabled="disabled"
+              class="border-muted-foreground/70 bg-background/70 size-5 border-2 shadow-sm"
+              @update:model-value="toggle(player.player_id, $event)"
+            />
+          </label>
         </div>
-      </fieldset>
+      </FieldSet>
 
       <!-- Taking a speaker off the user's own music is worth saying out loud
            before it happens, not after. -->
@@ -96,7 +107,7 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { Label } from "@/components/ui/label";
+import { FieldLegend, FieldSet } from "@/components/ui/field";
 import { Spinner } from "@/components/ui/spinner";
 import type { CalibrationPlayer } from "@/plugins/api/interfaces";
 import { Play, TriangleAlert } from "@lucide/vue";
