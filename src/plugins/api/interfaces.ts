@@ -1861,6 +1861,20 @@ export interface CalibrationPlayer {
   // whether the speaker is busy with the user's own content, so a client can warn
   // before a session takes it over
   busy: boolean;
+  // whether the server can write a delay to this speaker. A speaker that cannot
+  // take one is still worth measuring — the number is set on the device by hand
+  adjustable: boolean;
+}
+
+export interface CalibrationApplyResult {
+  // the absolute delay the server wrote to each speaker, replacing what it held
+  applied: Record<string, number>;
+  // for each speaker the server could not write to, the delay to ADD to whatever
+  // the device already applies — not a value to set. The server does not read the
+  // device's own delay, because the figure it can read is a configured default the
+  // device may not be carrying, and trusting it would move the reference every
+  // other speaker is normalised against
+  manual: Record<string, number>;
 }
 
 export interface CalibrationSessionState {

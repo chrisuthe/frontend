@@ -4,8 +4,8 @@ import { mount } from "@vue/test-utils";
 import { describe, expect, it } from "vitest";
 
 const PLAYERS = [
-  { player_id: "living", name: "Living room", busy: false },
-  { player_id: "kitchen", name: "Kitchen", busy: false },
+  { player_id: "living", name: "Living room", busy: false, adjustable: true },
+  { player_id: "kitchen", name: "Kitchen", busy: false, adjustable: true },
 ];
 
 function reading(overrides: Partial<Measurement> = {}): Measurement {

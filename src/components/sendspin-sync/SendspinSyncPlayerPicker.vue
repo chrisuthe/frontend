@@ -37,6 +37,15 @@
             <span class="min-w-0 flex-1 truncate text-sm">
               {{ player.name }}
             </span>
+            <!-- What the speaker is before what it happens to be doing, so the
+                 row does not reorder as playback starts and stops. -->
+            <Badge
+              v-if="!player.adjustable"
+              variant="secondary"
+              class="shrink-0"
+            >
+              {{ $t(`${KEYS}.manual.badge`) }}
+            </Badge>
             <Badge v-if="player.busy" variant="warning" class="shrink-0">
               {{ $t(`${KEYS}.pick.busy`) }}
             </Badge>
@@ -65,9 +74,15 @@
         </AlertDescription>
       </Alert>
 
-      <p v-if="players.length" class="text-sm text-muted-foreground">
-        {{ $t(`${KEYS}.pick.minimum`) }}
-      </p>
+      <div
+        v-if="players.length"
+        class="space-y-1 text-sm text-muted-foreground"
+      >
+        <p>{{ $t(`${KEYS}.pick.minimum`) }}</p>
+        <!-- The badge on its own only names the case; this says why it is still
+             worth ticking those speakers rather than skipping them. -->
+        <p v-if="anyManual">{{ $t(`${KEYS}.pick.manual`) }}</p>
+      </div>
     </CardContent>
 
     <CardFooter>
@@ -132,6 +147,8 @@ const busySelected = computed(() =>
     (player) => player.busy && selected.includes(player.player_id),
   ),
 );
+
+const anyManual = computed(() => players.some((player) => !player.adjustable));
 
 /**
  * Add or remove one speaker, keeping the order the user picked them in.

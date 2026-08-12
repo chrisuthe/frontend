@@ -1857,7 +1857,14 @@
                 "diagnostics": "Microphone diagnostics",
                 "toast": {
                     "started": "Calibration started. Walk to your first speaker.",
-                    "applied": "Speaker delays updated."
+                    "applied": "Speaker delays updated.",
+                    "manual": "Delays worked out. Add each one to the speaker's current delay."
+                },
+                "manual": {
+                    "badge": "Manual delay",
+                    "row": "(add {0} ms)",
+                    "title": "Add these amounts to the speakers' current delays",
+                    "description": "Music Assistant cannot set the delay on {0}. These are amounts to add, not values to set: a speaker already delaying by 20 ms that needs 43 ms more ends up at 63 ms. The easier route on an ESPHome speaker is static_delay_adjustable: true under the player's media_source, which lets Music Assistant work the total out and set it for you next time you calibrate. Otherwise add the amount to whatever initial_static_delay the speaker already carries. Other speakers do it their own way — some amplifiers have a delay control on the hardware."
                 },
                 "confidence": {
                     "good": "Good",
@@ -1878,6 +1885,7 @@
                     "description": "Pick the speakers you want evened out. You will walk to each one in the order you tick them, so start with the one you can easily come back to at the end.",
                     "legend": "Speakers to calibrate",
                     "minimum": "Pick at least two speakers — calibration measures them against each other.",
+                    "manual": "Speakers marked \"Manual delay\" can't be adjusted from here, but they are still worth measuring — you will get an amount to add to the delay the speaker already applies.",
                     "busy": "Playing",
                     "start": "Start calibration",
                     "start_takeover": "Take over and start",
@@ -1916,6 +1924,7 @@
                     "used": "{0} used, {1} discarded",
                     "apply": "Apply these delays",
                     "applied": "Delays applied",
+                    "worked_out": "Delays worked out",
                     "finish": "Finish and release the speakers",
                     "check": {
                     "unmeasured": {

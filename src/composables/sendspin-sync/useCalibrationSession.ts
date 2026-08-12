@@ -28,6 +28,7 @@
 
 import api from "@/plugins/api";
 import type {
+  CalibrationApplyResult,
   CalibrationPlayer,
   CalibrationSessionState,
 } from "@/plugins/api/interfaces";
@@ -114,17 +115,24 @@ export function useCalibrationSession() {
   }
 
   /**
-   * Hand the measured offsets over, and return the delay applied per speaker.
+   * Hand the measured offsets over, and return the delay worked out per speaker.
    *
    * The offsets are relative: the phone measures every speaker against a shared,
    * arbitrary baseline, so only the differences between them carry meaning. The
    * server normalises them against the delays the speakers already carry, which
    * is what makes re-running calibration converge instead of drift.
+   *
+   * Every speaker gets a delay; the split says which of them the server was able
+   * to write, and the two halves do not mean the same thing. An `applied` figure
+   * is absolute and already in place. A `manual` figure is an increment: the
+   * device is still applying a delay of its own, which this run measured but the
+   * server will not guess at, so the number has to be added to it rather than
+   * written over it.
    */
   async function apply(
     offsetsMs: Record<string, number>,
-  ): Promise<Record<string, number> | null> {
-    const result = await send<Record<string, number>>(
+  ): Promise<CalibrationApplyResult | null> {
+    const result = await send<CalibrationApplyResult>(
       "sendspin_sync/apply_measurements",
       { offsets_ms: offsetsMs },
     );
