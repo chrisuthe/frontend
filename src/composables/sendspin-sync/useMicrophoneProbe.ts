@@ -11,6 +11,17 @@
  */
 
 import { computed, onScopeDispose, ref } from "vue";
+import {
+  describeError,
+  holdScreenAwake,
+  openMicrophone,
+  VOICE_PROCESSING,
+  type ConstraintCheck,
+  type ProbeContextState,
+  type ProbeError,
+  type ScreenAwake,
+  type WakeLockCheck,
+} from "./audioCapture";
 // `no-inline` keeps the processor a real file: `addModule()` is not reliably
 // allowed to load a `data:` URL, which is what Vite would otherwise emit for
 // an asset this small.
@@ -29,15 +40,6 @@ const PROGRESS_INTERVAL_MS = 250;
  */
 const DRIFT_WARN_PPM = 1000;
 
-/** The voice processing a calibration capture needs switched off. */
-export const VOICE_PROCESSING = [
-  "echoCancellation",
-  "noiseSuppression",
-  "autoGainControl",
-] as const;
-
-export type VoiceProcessing = (typeof VOICE_PROCESSING)[number];
-
 /** Posted by the frame counter worklet every few render quanta. */
 interface FrameCounterReport {
   frames: number;
@@ -51,12 +53,6 @@ interface CaptureSample extends FrameCounterReport {
   at: number;
 }
 
-/** A failure kept whole: the name is what tells the reader which one it was. */
-export interface ProbeError {
-  name: string;
-  message: string;
-}
-
 export interface SecureContextCheck {
   secure: boolean;
   origin: string;
@@ -66,20 +62,6 @@ export interface SecureContextCheck {
 export interface MediaApiCheck {
   mediaDevices: boolean;
   getUserMedia: boolean;
-}
-
-export interface ConstraintCheck {
-  /** What the capture asked for — `false` for each voice processor. */
-  requested: Record<VoiceProcessing, boolean>;
-  /** What the track reports back; a missing entry means the browser said nothing. */
-  applied: Partial<Record<VoiceProcessing, boolean>>;
-  /** Whether the browser recognises each constraint at all. */
-  supported: Record<VoiceProcessing, boolean>;
-  /** True only when all three read back as explicitly off. */
-  honored: boolean;
-  trackSettings: MediaTrackSettings;
-  trackLabel: string;
-  error: ProbeError | null;
 }
 
 export interface AudioContextCheck {
@@ -110,17 +92,6 @@ export interface CaptureCheck {
   clockDriftPpm: number;
   error: ProbeError | null;
 }
-
-export interface WakeLockCheck {
-  supported: boolean;
-  acquired: boolean;
-  /** False when the browser took the lock back before the run finished. */
-  heldToEnd: boolean;
-  error: ProbeError | null;
-}
-
-/** Safari reports a non-standard `interrupted` state the DOM types omit. */
-export type ProbeContextState = AudioContextState | "interrupted";
 
 export interface ContextStateTransition {
   /** Seconds since the capture graph was built. */
@@ -224,7 +195,9 @@ export function useMicrophoneProbe() {
       result.wakeLock = wakeLock.check;
       if (!context) return;
 
-      const stream = await openMicrophone(result);
+      const captured = await openMicrophone();
+      result.constraints = captured.constraints;
+      const stream = captured.stream;
       if (!stream) return;
       try {
         if (signal.aborted) return;
@@ -335,64 +308,6 @@ function startReport(): MicrophoneProbeReport {
     wakeLock: null,
     contextState: null,
   };
-}
-
-/** Requests the microphone and records what the browser applied to the track. */
-async function openMicrophone(
-  result: MicrophoneProbeReport,
-): Promise<MediaStream | null> {
-  if (!result.mediaApi.getUserMedia) return null;
-
-  const requested = Object.fromEntries(
-    VOICE_PROCESSING.map((name) => [name, false]),
-  ) as Record<VoiceProcessing, boolean>;
-  const supportedConstraints = navigator.mediaDevices.getSupportedConstraints();
-  const supported = Object.fromEntries(
-    VOICE_PROCESSING.map((name) => [name, Boolean(supportedConstraints[name])]),
-  ) as Record<VoiceProcessing, boolean>;
-
-  let stream: MediaStream;
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({ audio: requested });
-  } catch (error) {
-    result.constraints = {
-      requested,
-      applied: {},
-      supported,
-      honored: false,
-      trackSettings: {},
-      trackLabel: "",
-      error: describeError(error),
-    };
-    return null;
-  }
-
-  const track = stream.getAudioTracks()[0];
-  const settings = track?.getSettings() ?? {};
-  const applied: Partial<Record<VoiceProcessing, boolean>> = {};
-  for (const name of VOICE_PROCESSING) {
-    const value = settings[name];
-    if (typeof value === "boolean") applied[name] = value;
-  }
-
-  result.constraints = {
-    requested,
-    applied,
-    supported,
-    honored: VOICE_PROCESSING.every((name) => applied[name] === false),
-    trackSettings: settings,
-    trackLabel: track?.label ?? "",
-    error: track
-      ? null
-      : {
-          name: "NoAudioTrackError",
-          message: "The captured stream carried no audio track",
-        },
-  };
-  if (track) return stream;
-
-  for (const orphan of stream.getTracks()) orphan.stop();
-  return null;
 }
 
 /**
@@ -563,63 +478,6 @@ function leastDelayed(samples: CaptureSample[]): CaptureSample {
   );
 }
 
-/** What the caller must release once the run is over. */
-interface ScreenAwake {
-  check: WakeLockCheck | null;
-  release: () => Promise<void>;
-}
-
-/**
- * Holds the screen awake for the run, and hands back the release.
- *
- * The API is secure-context only, so an insecure origin reports nothing rather
- * than a failure the device is not responsible for. A lock the browser takes
- * back mid-run is recorded, because calibration needs it for several minutes.
- */
-async function holdScreenAwake(secureContext: boolean): Promise<ScreenAwake> {
-  const idle = { release: async () => undefined };
-  if (!secureContext) return { check: null, ...idle };
-
-  const supported = "wakeLock" in navigator;
-  if (!supported)
-    return {
-      check: { supported, acquired: false, heldToEnd: false, error: null },
-      ...idle,
-    };
-
-  try {
-    const sentinel = await navigator.wakeLock.request("screen");
-    const check: WakeLockCheck = {
-      supported,
-      acquired: true,
-      heldToEnd: true,
-      error: null,
-    };
-    const onRelease = () => {
-      check.heldToEnd = false;
-    };
-    sentinel.addEventListener("release", onRelease);
-    return {
-      check,
-      release: async () => {
-        // Detached first so this release is not read as the browser's.
-        sentinel.removeEventListener("release", onRelease);
-        await sentinel.release().catch(() => undefined);
-      },
-    };
-  } catch (error) {
-    return {
-      check: {
-        supported,
-        acquired: false,
-        heldToEnd: false,
-        error: describeError(error),
-      },
-      ...idle,
-    };
-  }
-}
-
 function emptyCapture(): CaptureCheck {
   return {
     requestedSeconds: CAPTURE_SECONDS,
@@ -637,10 +495,4 @@ function emptyCapture(): CaptureCheck {
 
 function finiteOrNull(value: number | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function describeError(error: unknown): ProbeError {
-  if (error instanceof Error)
-    return { name: error.name, message: error.message };
-  return { name: "Error", message: String(error) };
 }

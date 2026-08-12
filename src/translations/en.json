@@ -1852,6 +1852,118 @@
         },
         "sendspin_sync": {
             "title": "Sendspin Sync",
+            "calibration": {
+                "subtitle": "Walk to each speaker with this phone. It listens for a calibration chirp and works out how far behind each speaker is, then evens them out.",
+                "diagnostics": "Microphone diagnostics",
+                "toast": {
+                    "started": "Calibration started. Walk to your first speaker.",
+                    "applied": "Speaker delays updated."
+                },
+                "confidence": {
+                    "good": "Good",
+                    "weak": "Weak",
+                    "poor": "Poor"
+                },
+                "microphone_failed": {
+                    "title": "The microphone could not be opened",
+                    "description": "Calibration needs to hear the chirp, so it cannot start. Open the microphone diagnostics below to find out why."
+                },
+                "in_progress": {
+                    "title": "A calibration is already running",
+                    "description": "The server allows one at a time, so that one has to end before you can start another. If it was you on another device, or a run that was abandoned, you can end it here.",
+                    "stop": "End the running calibration"
+                },
+                "pick": {
+                    "title": "Choose the speakers",
+                    "description": "Pick the speakers you want evened out. You will walk to each one in the order you tick them, so start with the one you can easily come back to at the end.",
+                    "legend": "Speakers to calibrate",
+                    "minimum": "Pick at least two speakers — calibration measures them against each other.",
+                    "busy": "Playing",
+                    "start": "Start calibration",
+                    "start_takeover": "Take over and start",
+                    "takeover": {
+                        "title": "These speakers are playing something",
+                        "description": "Calibration will interrupt {0}, and give it back when you are done."
+                    },
+                    "none": {
+                        "title": "No speakers can be calibrated",
+                        "description": "Calibration needs at least two Sendspin speakers that are switched on and reachable."
+                    }
+                },
+                "walk": {
+                    "title": "Walk to each speaker",
+                    "description": "Stand next to a speaker, hold the phone towards it at arm's length, then tap Measure and keep still. Distance matters: every 34 cm you stand back adds about a millisecond.",
+                    "measure": "Measure",
+                    "again": "Measure again",
+                    "not_measured": "Not measured yet",
+                    "found": "Heard {0} of {1} chirps",
+                    "listening": "Listening — keep the phone still and the screen on.",
+                    "bracket": {
+                        "title": "One more to go",
+                        "description": "Go back to {0} and measure it again. Measuring one speaker at both ends of the walk is what pins down this phone's own clock drift; without it the other readings cannot be separated from it. Measuring a second speaker twice as well is optional, and cross-checks the result."
+                    }
+                },
+                "results": {
+                    "title": "What the walk measured",
+                    "description": "How far behind each speaker is, relative to the first one you measured. Applying this delays the others so they all line up with the slowest.",
+                    "milliseconds": "{0} ms",
+                    "unheard": "not heard",
+                    "applied_delay": "(delay set to {0} ms)",
+                    "clock": "This phone's clock",
+                    "ppm": "{0} ppm off the server",
+                    "scatter": "Reading scatter",
+                    "arrivals": "Chirps used",
+                    "used": "{0} used, {1} discarded",
+                    "apply": "Apply these delays",
+                    "applied": "Delays applied",
+                    "finish": "Finish and release the speakers",
+                    "check": {
+                    "unmeasured": {
+                        "title": "One speaker was never heard",
+                        "description": "Nothing was picked up from {0}. Measure it before applying: the delays are worked out relative to each other, so leaving one out would move every other speaker around it and leave that one where it was — making the mismatch worse rather than better."
+                    },
+                    "short_bracket": {
+                        "title": "The check was too quick to count",
+                        "description": "{0} was measured twice, but the two readings were too close together in time to pin down this phone's clock drift. Measure it again now, at the end of the walk, so the two readings sit at opposite ends of the run."
+                    },
+                        "unbracketed": {
+                            "title": "Not checked yet",
+                            "description": "Measure {0} a second time. Until one speaker has been measured at both ends of the walk, this phone's clock drift rests on the few seconds a single reading spans, and the numbers above cannot be separated from it."
+                        },
+                        "scattered": {
+                            "title": "The readings do not agree with each other",
+                            "description": "The individual chirps scatter by {0} ms, more than the {1} ms a clean recording stays inside. The phone probably moved while it was listening, or something interfered with the audio. Walk it again."
+                        },
+                        "pinned": {
+                            "title": "Good enough to apply",
+                            "description": "The chirps line up tightly, and measuring one speaker {0} minutes apart pinned this phone's clock drift down. Note that this one repeat is what sets the drift figure, so it cannot also double as a check on it — measure a second speaker twice if you want the run cross-checked."
+                        },
+                        "checked": {
+                            "title": "This run checks out",
+                            "description": "There were enough repeated readings to test the clock drift rather than just set it, and they agree to within {0} ms. These numbers can be trusted."
+                        },
+                        "disagrees": {
+                            "title": "This run does not check out",
+                            "description": "The repeated readings disagree by {0} ms, more than the {1} ms it takes to trust the rest. Something moved, or the audio was interrupted — walk it again rather than applying this."
+                        }
+                    }
+                },
+                "void": {
+                    "restart": "Start again",
+                    "suspended": {
+                        "title": "This run has to be thrown away",
+                        "description": "The phone stopped recording part way through — usually the screen locking, or another app taking the microphone. Every reading is timed against one continuous recording, and there is no way to stitch the two halves back together, so the run cannot be salvaged. Keep the screen on and start again."
+                    },
+                    "expired": {
+                        "title": "The calibration session timed out",
+                        "description": "The server gave the speakers back after a long gap with nothing measured. Nothing was changed. Start again when you are ready to walk."
+                    },
+                    "failed": {
+                        "title": "The server stopped responding",
+                        "description": "Calibration could not reach Music Assistant, so the run has ended. Nothing was changed. Check the connection and start again."
+                    }
+                }
+            },
             "toast": {
                 "unavailable": "Sendspin Sync is not enabled on this server."
             },
