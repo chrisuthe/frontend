@@ -1,6 +1,6 @@
 import SendspinSyncPlayerPicker from "@/components/sendspin-sync/SendspinSyncPlayerPicker.vue";
-import { mount } from "@vue/test-utils";
-import { describe, expect, it } from "vitest";
+import { enableAutoUnmount, mount } from "@vue/test-utils";
+import { afterEach, describe, expect, it } from "vitest";
 
 const KEYS = "providers.sendspin_sync.calibration.pick";
 
@@ -9,8 +9,15 @@ const PLAYERS = [
   { player_id: "kitchen", name: "Kitchen", busy: true },
 ];
 
+/**
+ * Mount the picker.
+ *
+ * Attach to the document for a test that clicks a row: a label only forwards a
+ * click to the control its `for` names once the tree is in the document.
+ */
 function mountPicker(
   props: Partial<InstanceType<typeof SendspinSyncPlayerPicker>["$props"]> = {},
+  attachToDocument = false,
 ) {
   return mount(SendspinSyncPlayerPicker, {
     props: {
@@ -19,6 +26,7 @@ function mountPicker(
       disabled: false,
       ...props,
     },
+    ...(attachToDocument ? { attachTo: document.body } : {}),
     global: { mocks: { $t: (key: string) => key } },
   });
 }
@@ -29,6 +37,10 @@ function startButton(wrapper: ReturnType<typeof mountPicker>) {
 }
 
 describe("SendspinSyncPlayerPicker", () => {
+  // An attached row left behind would shadow the next one: the checkbox finds
+  // its label with a document-wide query, and the first match wins.
+  enableAutoUnmount(afterEach);
+
   it("lists every speaker a session can run against", () => {
     const wrapper = mountPicker();
 
@@ -59,6 +71,25 @@ describe("SendspinSyncPlayerPicker", () => {
     expect(wrapper.emitted("update:selected")).toEqual([
       [["kitchen", "living"]],
     ]);
+  });
+
+  it("ticks a speaker from anywhere on its row, not just the box", async () => {
+    const wrapper = mountPicker({}, true);
+
+    // The row is the label, so clicking the name forwards to its checkbox.
+    await wrapper.find("label span").trigger("click");
+
+    expect(wrapper.emitted("update:selected")).toEqual([[["living"]]]);
+  });
+
+  it("ignores the row while a run is already in flight", async () => {
+    const wrapper = mountPicker({ disabled: true }, true);
+
+    // Nothing on the row guards this — the disabled checkbox is what swallows
+    // the click the label forwards to it.
+    await wrapper.find("label span").trigger("click");
+
+    expect(wrapper.emitted("update:selected")).toBeUndefined();
   });
 
   it("removes a speaker that is ticked off again", async () => {
