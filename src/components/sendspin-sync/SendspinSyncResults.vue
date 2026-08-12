@@ -6,7 +6,10 @@
     </CardHeader>
 
     <CardContent class="space-y-4">
-      <ul class="divide-y border-t">
+      <!-- A run whose arrivals landed on the wrong chirp has offsets, and they
+           mean nothing. Showing them next to the reason they cannot be believed
+           would only invite someone to copy them onto a speaker by hand. -->
+      <ul v-if="usable" class="divide-y border-t">
         <li
           v-for="row in rows"
           :key="row.playerId"
@@ -80,11 +83,16 @@
         <dd class="font-mono">
           {{ $t(`${KEYS}.results.ppm`, [fit.rateErrorPpm.toFixed(1)]) }}
         </dd>
+        <!-- One figure for the run cannot separate a single bad speaker from
+             detection that was poor everywhere, and those are different faults
+             with different fixes. -->
         <dt class="text-muted-foreground">
           {{ $t(`${KEYS}.results.scatter`) }}
         </dt>
-        <dd class="font-mono">
-          {{ $t(`${KEYS}.results.milliseconds`, [fit.residualMs.toFixed(2)]) }}
+        <dd class="flex flex-col font-mono">
+          <span v-for="row in scatterRows" :key="row.playerId">
+            {{ $t(`${KEYS}.results.scatter_row`, [row.name, row.scatter]) }}
+          </span>
         </dd>
         <dt class="text-muted-foreground">
           {{ $t(`${KEYS}.results.arrivals`) }}
@@ -96,8 +104,12 @@
     </CardContent>
 
     <CardFooter class="flex-col items-stretch gap-2 sm:flex-row">
+      <!-- Absent rather than disabled on a run that did not check out: a control
+           offering to apply delays the panel has just said cannot be trusted is
+           a contradiction whichever state it is in. -->
       <Button
-        :disabled="disabled || !trustworthy || applyResult !== null"
+        v-if="trustworthy"
+        :disabled="disabled || applyResult !== null"
         @click="emit('apply')"
       >
         <Spinner v-if="disabled" class="size-4" aria-hidden="true" />
@@ -124,7 +136,10 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
-import type { LatencyFit } from "@/helpers/sendspin-sync/latencyFit";
+import {
+  MAX_PLAUSIBLE_RATE_PPM,
+  type LatencyFit,
+} from "@/helpers/sendspin-sync/latencyFit";
 import {
   BRACKET_LIMIT_MS,
   SCATTER_LIMIT_MS,
@@ -175,9 +190,25 @@ function nameOf(playerId: string): string {
 
 const anchorName = computed(() => (anchor ? nameOf(anchor) : ""));
 
+/** Whether this run's offsets are readings at all, however far they can be trusted. */
+const usable = computed(() => verdict !== "irreconcilable");
+
+/** Every measured speaker's own scatter, worst first, so the odd one out leads. */
+const scatterRows = computed(() =>
+  Object.entries(fit.scatterMs)
+    .sort(([, left], [, right]) => right - left)
+    .map(([playerId, scatter]) => ({
+      playerId,
+      name: nameOf(playerId),
+      scatter: scatter.toFixed(2),
+    })),
+);
+
 /** The readings the verdict's wording needs filled in. */
 const verdictValues = computed(() => {
   switch (verdict) {
+    case "irreconcilable":
+      return [fit.rateErrorPpm.toFixed(0), MAX_PLAUSIBLE_RATE_PPM];
     case "unmeasured":
       return [unheard.value.join(", ")];
     case "unbracketed":

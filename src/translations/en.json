@@ -1920,6 +1920,7 @@
                     "clock": "This phone's clock",
                     "ppm": "{0} ppm off the server",
                     "scatter": "Reading scatter",
+                    "scatter_row": "{0}: {1} ms",
                     "arrivals": "Chirps used",
                     "used": "{0} used, {1} discarded",
                     "apply": "Apply these delays",
@@ -1927,6 +1928,10 @@
                     "worked_out": "Delays worked out",
                     "finish": "Finish and release the speakers",
                     "check": {
+                        "irreconcilable": {
+                            "title": "These readings could not be reconciled",
+                            "description": "The chirps only fit if this phone's clock were {0} ppm off the server, and no clock is — {1} ppm is already far outside anything real. The recording lost track of which chirp was which, most likely across a long silence between speakers, so nothing measured here can be trusted. Walk it again, keeping the gaps between speakers as short as you can."
+                        },
                     "unmeasured": {
                         "title": "One speaker was never heard",
                         "description": "Nothing was picked up from {0}. Measure it before applying: the delays are worked out relative to each other, so leaving one out would move every other speaker around it and leave that one where it was — making the mismatch worse rather than better."

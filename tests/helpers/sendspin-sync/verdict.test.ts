@@ -27,6 +27,7 @@ function fitFixture(overrides: Partial<LatencyFit> = {}): LatencyFit {
     rateRatio: 1.00004,
     rateErrorPpm: 40,
     residualMs: 0.05,
+    scatterMs: { living: 0.05, kitchen: 0.05 },
     bracketSpanSeconds: 90,
     bracketResidualMs: null,
     runSpanSeconds: 100,
@@ -43,6 +44,32 @@ describe("runVerdict", () => {
 
     expect(verdict).toBe("pinned");
     expect(isApplicable(verdict)).toBe(true);
+  });
+
+  it("refuses a rate no clock could have, ahead of everything else", () => {
+    // One chirp period misassigned across a two and a half minute walk. Worst
+    // first, and this is the worst there is: the arrivals were reconciled onto
+    // the wrong chirp, so the missing speaker and the scatter it also shows are
+    // symptoms rather than the fault.
+    const verdict = runVerdict(
+      fitFixture({
+        rateErrorPpm: -3318.7,
+        offsetsMs: { living: 0 },
+        residualMs: 17.03,
+      }),
+      SELECTED,
+    );
+
+    expect(verdict).toBe("irreconcilable");
+    expect(isApplicable(verdict)).toBe(false);
+  });
+
+  it("lets a poor but possible clock through to the other checks", () => {
+    // The microphone probe calls 1000 ppm degraded and still lets the run go
+    // ahead, so the refusal has to sit above it rather than duplicate it.
+    expect(runVerdict(fitFixture({ rateErrorPpm: 1000 }), SELECTED)).toBe(
+      "pinned",
+    );
   });
 
   it("names an unheard speaker ahead of anything else that is wrong", () => {
@@ -128,6 +155,7 @@ describe("runVerdict", () => {
     expect(isApplicable("pinned")).toBe(true);
     expect(isApplicable("checked")).toBe(true);
     for (const verdict of [
+      "irreconcilable",
       "unmeasured",
       "unbracketed",
       "short_bracket",

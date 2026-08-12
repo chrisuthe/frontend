@@ -236,6 +236,7 @@ async function applyFrom(result: CalibrationApplyResult) {
     rateRatio: 1.00004,
     rateErrorPpm: 40,
     residualMs: 0.03,
+    scatterMs: { living: 0.02, kitchen: 0.04 },
     bracketSpanSeconds: 90,
     bracketResidualMs: null,
     runSpanSeconds: 100,

@@ -18,6 +18,7 @@ function fitFixture(overrides: Partial<LatencyFit> = {}): LatencyFit {
     rateRatio: 1.00004,
     rateErrorPpm: 40,
     residualMs: 0.03,
+    scatterMs: { living: 0.02, kitchen: 0.04 },
     bracketSpanSeconds: 90,
     bracketResidualMs: null,
     runSpanSeconds: 100,
@@ -48,13 +49,29 @@ function mountResults(
       disabled: false,
       ...props,
     },
-    global: { mocks: { $t: (key: string) => key } },
+    global: {
+      mocks: {
+        // The values are rendered alongside the key, because a per-speaker
+        // figure that named the wrong speaker would match the key on its own.
+        $t: (key: string, values?: unknown[]) =>
+          values ? `${key} ${values.join(" ")}` : key,
+      },
+    },
   });
 }
 
-/** The Apply button, which is always the first in the footer. */
+/** The Apply button, which is absent altogether on a run that cannot be applied. */
 function applyButton(wrapper: ReturnType<typeof mountResults>) {
-  return wrapper.findAll("button")[0];
+  return wrapper
+    .findAll("button")
+    .find((button) => !button.text().includes(`${BASE}.finish`));
+}
+
+/** The Finish button, which is offered whatever the run came to. */
+function finishButton(wrapper: ReturnType<typeof mountResults>) {
+  return wrapper
+    .findAll("button")
+    .find((button) => button.text().includes(`${BASE}.finish`))!;
 }
 
 describe("SendspinSyncResults", () => {
@@ -72,7 +89,7 @@ describe("SendspinSyncResults", () => {
     // The usual case, and the one most easily misread: a single repeat determines
     // the clock rate and so cannot also test it.
     expect(wrapper.text()).toContain(`${BASE}.check.pinned.title`);
-    expect(applyButton(wrapper).attributes("disabled")).toBeUndefined();
+    expect(applyButton(wrapper)!.attributes("disabled")).toBeUndefined();
   });
 
   it("asks for a second reading when nothing was measured twice", () => {
@@ -82,7 +99,7 @@ describe("SendspinSyncResults", () => {
     });
 
     expect(wrapper.text()).toContain(`${BASE}.check.unbracketed.title`);
-    expect(applyButton(wrapper).attributes("disabled")).toBeDefined();
+    expect(applyButton(wrapper)).toBeUndefined();
   });
 
   it("blames the scatter when the arrivals do not sit on the line", () => {
@@ -92,7 +109,7 @@ describe("SendspinSyncResults", () => {
     });
 
     expect(wrapper.text()).toContain(`${BASE}.check.scattered.title`);
-    expect(applyButton(wrapper).attributes("disabled")).toBeDefined();
+    expect(applyButton(wrapper)).toBeUndefined();
   });
 
   it("says the bracket was too quick when the two readings were close", () => {
@@ -102,7 +119,7 @@ describe("SendspinSyncResults", () => {
     });
 
     expect(wrapper.text()).toContain(`${BASE}.check.short_bracket.title`);
-    expect(applyButton(wrapper).attributes("disabled")).toBeDefined();
+    expect(applyButton(wrapper)).toBeUndefined();
   });
 
   it("names a speaker it never heard, and refuses to apply without it", () => {
@@ -116,7 +133,7 @@ describe("SendspinSyncResults", () => {
     expect(wrapper.text()).toContain(`${BASE}.check.unmeasured.title`);
     expect(wrapper.text()).toContain(`${BASE}.unheard`);
     expect(wrapper.findAll("li")).toHaveLength(2);
-    expect(applyButton(wrapper).attributes("disabled")).toBeDefined();
+    expect(applyButton(wrapper)).toBeUndefined();
   });
 
   it("blames a single spoiled reading even when the run-wide scatter is fine", () => {
@@ -165,7 +182,36 @@ describe("SendspinSyncResults", () => {
     });
 
     expect(wrapper.text()).toContain(`${BASE}.check.disagrees.title`);
-    expect(applyButton(wrapper).attributes("disabled")).toBeDefined();
+    expect(applyButton(wrapper)).toBeUndefined();
+  });
+
+  it("refuses a rate no clock could have, and shows nothing to apply", () => {
+    const wrapper = mountResults({
+      fit: fitFixture({ rateErrorPpm: -3318.7, residualMs: 17.03 }),
+      trustworthy: false,
+    });
+
+    // Offsets that came out of the wrong chirp are not readings, so they are not
+    // shown at all: alongside the reason they cannot be believed they would only
+    // invite someone to copy them onto a speaker by hand.
+    expect(wrapper.text()).toContain(`${BASE}.check.irreconcilable.title`);
+    expect(wrapper.findAll("li")).toHaveLength(0);
+    expect(applyButton(wrapper)).toBeUndefined();
+    expect(finishButton(wrapper).exists()).toBe(true);
+  });
+
+  it("gives the scatter one speaker at a time, worst first", () => {
+    const wrapper = mountResults({
+      fit: fitFixture({ scatterMs: { living: 0.04, kitchen: 17.03 } }),
+    });
+
+    // A single bad speaker and detection that was poor everywhere read the same
+    // in one run-wide figure, and want entirely different things done about them.
+    const scatter = wrapper.findAll("dd")[1].findAll("span");
+    expect(scatter).toHaveLength(2);
+    expect(scatter[0].text()).toContain("Kitchen");
+    expect(scatter[0].text()).toContain("17.03");
+    expect(scatter[1].text()).toContain("Living room");
   });
 
   it("announces its verdict, since it is what the walk was for", () => {
@@ -175,7 +221,7 @@ describe("SendspinSyncResults", () => {
   it("hands the offsets over when asked", async () => {
     const wrapper = mountResults();
 
-    await applyButton(wrapper).trigger("click");
+    await applyButton(wrapper)!.trigger("click");
 
     expect(wrapper.emitted("apply")).toHaveLength(1);
   });
@@ -188,7 +234,7 @@ describe("SendspinSyncResults", () => {
     expect(wrapper.findAll("li")[0].text()).toContain(`${BASE}.applied_delay`);
     expect(wrapper.text()).not.toContain(`${MANUAL}.title`);
     expect(wrapper.text()).not.toContain(`${MANUAL}.badge`);
-    expect(applyButton(wrapper).attributes("disabled")).toBeDefined();
+    expect(applyButton(wrapper)!.attributes("disabled")).toBeDefined();
   });
 
   it("marks a speaker no delay can be written to, before anything is applied", () => {
@@ -247,7 +293,7 @@ describe("SendspinSyncResults", () => {
   it("can be finished without applying anything", async () => {
     const wrapper = mountResults({ trustworthy: false });
 
-    await wrapper.findAll("button")[1].trigger("click");
+    await finishButton(wrapper).trigger("click");
 
     expect(wrapper.emitted("finish")).toHaveLength(1);
   });
