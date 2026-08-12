@@ -8,8 +8,8 @@ const { sendCommand } = vi.hoisted(() => ({ sendCommand: vi.fn() }));
 vi.mock("@/plugins/api", () => ({ default: { sendCommand } }));
 
 const PLAYERS = [
-  { player_id: "living", name: "Living room", busy: false },
-  { player_id: "kitchen", name: "Kitchen", busy: true },
+  { player_id: "living", name: "Living room", busy: false, adjustable: true },
+  { player_id: "kitchen", name: "Kitchen", busy: true, adjustable: true },
 ];
 
 function sessionState(
@@ -94,10 +94,11 @@ describe("useCalibrationSession", () => {
     // The offsets are relative and the server does the normalising: pre-shifting
     // or flipping them here would double the correction it then applies.
     const offsets = { living: 0, kitchen: -7.25 };
-    sendCommand.mockResolvedValue({ living: 8, kitchen: 0 });
+    const result = { applied: { living: 8 }, manual: { kitchen: 0 } };
+    sendCommand.mockResolvedValue(result);
     const session = withScope(() => useCalibrationSession());
 
-    expect(await session.apply(offsets)).toEqual({ living: 8, kitchen: 0 });
+    expect(await session.apply(offsets)).toEqual(result);
     expect(callsTo("sendspin_sync/apply_measurements")[0][0]).toEqual({
       offsets_ms: offsets,
     });

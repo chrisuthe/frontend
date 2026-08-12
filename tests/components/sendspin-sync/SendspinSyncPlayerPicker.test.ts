@@ -3,10 +3,11 @@ import { enableAutoUnmount, mount } from "@vue/test-utils";
 import { afterEach, describe, expect, it } from "vitest";
 
 const KEYS = "providers.sendspin_sync.calibration.pick";
+const MANUAL = "providers.sendspin_sync.calibration.manual";
 
 const PLAYERS = [
-  { player_id: "living", name: "Living room", busy: false },
-  { player_id: "kitchen", name: "Kitchen", busy: true },
+  { player_id: "living", name: "Living room", busy: false, adjustable: true },
+  { player_id: "kitchen", name: "Kitchen", busy: true, adjustable: true },
 ];
 
 /**
@@ -52,6 +53,26 @@ describe("SendspinSyncPlayerPicker", () => {
 
   it("marks a speaker that is playing the user's own content", () => {
     expect(mountPicker().text()).toContain(`${KEYS}.busy`);
+  });
+
+  it("offers a speaker nothing can set a delay on, and says so", async () => {
+    const wrapper = mountPicker({
+      players: [PLAYERS[0], { ...PLAYERS[1], adjustable: false }],
+    });
+
+    expect(wrapper.text()).toContain(`${MANUAL}.badge`);
+    // Leaving it out is the failure this marking exists to prevent: it is
+    // measurable, and the number is the whole deliverable for it.
+    expect(wrapper.text()).toContain(`${KEYS}.manual`);
+    await wrapper.findAll('[data-slot="checkbox"]')[1].trigger("click");
+    expect(wrapper.emitted("update:selected")).toEqual([[["kitchen"]]]);
+  });
+
+  it("says nothing about manual delays when every speaker takes one", () => {
+    const wrapper = mountPicker();
+
+    expect(wrapper.text()).not.toContain(`${MANUAL}.badge`);
+    expect(wrapper.text()).not.toContain(`${KEYS}.manual`);
   });
 
   it("says there is nothing to calibrate rather than an empty list", () => {

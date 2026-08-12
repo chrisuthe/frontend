@@ -80,11 +80,11 @@
           :selected="selected"
           :fit="fit"
           :verdict="verdict"
-          :applied="applied"
+          :apply-result="applyResult"
           :trustworthy="trustworthy"
           :anchor="anchor"
           :disabled="busy || phase === 'measuring'"
-          @apply="applyResult"
+          @apply="applyDelays"
           @finish="startOver"
         />
       </template>
@@ -147,7 +147,7 @@ const {
   fit,
   verdict,
   trustworthy,
-  applied,
+  applyResult,
   openError,
   loadPlayers,
   refresh,
@@ -181,8 +181,11 @@ async function start(force: boolean): Promise<void> {
   if (await begin(force)) toast.success($t(`${KEYS}.toast.started`));
 }
 
-async function applyResult(): Promise<void> {
-  if (await apply()) toast.success($t(`${KEYS}.toast.applied`));
+/** Hand the run to the server, saying plainly whether anything was written. */
+async function applyDelays(): Promise<void> {
+  if (!(await apply())) return;
+  const wrote = Object.keys(applyResult.value?.applied ?? {}).length > 0;
+  toast.success($t(`${KEYS}.toast.${wrote ? "applied" : "manual"}`));
 }
 
 /** Give the speakers back, clear the run, and offer the picker again. */

@@ -1,3 +1,5 @@
+import SendspinSyncResults from "@/components/sendspin-sync/SendspinSyncResults.vue";
+import type { CalibrationApplyResult } from "@/plugins/api/interfaces";
 import SendspinSyncView from "@/views/SendspinSyncView.vue";
 import { mount } from "@vue/test-utils";
 import { ref } from "vue";
@@ -39,8 +41,8 @@ vi.mock("@/components/sendspin-sync/SendspinSyncProbe.vue", () => ({
 }));
 
 const PLAYERS = [
-  { player_id: "living", name: "Living room", busy: false },
-  { player_id: "kitchen", name: "Kitchen", busy: true },
+  { player_id: "living", name: "Living room", busy: false, adjustable: true },
+  { player_id: "kitchen", name: "Kitchen", busy: true, adjustable: true },
 ];
 
 let state: ReturnType<typeof makeState>;
@@ -59,9 +61,10 @@ function makeState() {
     remaining: ref<string[]>([]),
     needsBracket: ref(false),
     fit: ref<unknown>(null),
+    verdict: ref<string | null>(null),
     trustworthy: ref(false),
     crossChecked: ref(false),
-    applied: ref<Record<string, number> | null>(null),
+    applyResult: ref<CalibrationApplyResult | null>(null),
     openError: ref<string | null>(null),
     ...run,
   };
@@ -203,4 +206,53 @@ describe("SendspinSyncView", () => {
 
     expect(wrapper.text()).toContain("Microphone diagnostics");
   });
+
+  it("says the delays were updated when the server wrote some", async () => {
+    await applyFrom({ applied: { living: 0 }, manual: { kitchen: 12 } });
+
+    expect(toastSuccess).toHaveBeenCalledWith("Speaker delays updated.");
+  });
+
+  it("does not claim an update when nothing could be written", async () => {
+    // Every speaker was measured and normalised; none of them took the delay. A
+    // toast saying otherwise is the one place all the care below leaks out.
+    await applyFrom({ applied: {}, manual: { living: 0, kitchen: 12 } });
+
+    expect(toastSuccess).toHaveBeenCalledWith(
+      "Delays worked out. Add each one to the speaker's current delay.",
+    );
+  });
 });
+
+/** Walk the view as far as the results panel and press Apply. */
+async function applyFrom(result: CalibrationApplyResult) {
+  state.phase.value = "walking";
+  state.selected.value = ["living", "kitchen"];
+  state.anchor.value = "living";
+  state.trustworthy.value = true;
+  state.verdict.value = "pinned";
+  state.fit.value = {
+    offsetsMs: { living: 0, kitchen: 12.345 },
+    rateRatio: 1.00004,
+    rateErrorPpm: 40,
+    residualMs: 0.03,
+    bracketSpanSeconds: 90,
+    bracketResidualMs: null,
+    runSpanSeconds: 100,
+    visits: [],
+    used: 30,
+    rejected: 1,
+  };
+  run.apply.mockImplementation(async () => {
+    state.applyResult.value = result;
+    return true;
+  });
+
+  const wrapper = mountView();
+  await wrapper.vm.$nextTick();
+  await wrapper
+    .findComponent(SendspinSyncResults)
+    .find("button")
+    .trigger("click");
+  await wrapper.vm.$nextTick();
+}

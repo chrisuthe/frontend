@@ -35,8 +35,18 @@ vi.mock("@/composables/sendspin-sync/useCalibrationSession", async () => {
   return {
     useCalibrationSession: () => ({
       players: vueRef([
-        { player_id: "living", name: "Living room", busy: false },
-        { player_id: "kitchen", name: "Kitchen", busy: false },
+        {
+          player_id: "living",
+          name: "Living room",
+          busy: false,
+          adjustable: true,
+        },
+        {
+          player_id: "kitchen",
+          name: "Kitchen",
+          busy: false,
+          adjustable: true,
+        },
       ]),
       state: vueRef(null),
       lost: sessionLost,
@@ -157,7 +167,10 @@ beforeEach(() => {
   fakes.session.start.mockResolvedValue(true);
   fakes.session.solo.mockResolvedValue(true);
   fakes.session.stop.mockResolvedValue(undefined);
-  fakes.session.apply.mockResolvedValue({ living: 12, kitchen: 0 });
+  fakes.session.apply.mockResolvedValue({
+    applied: { living: 12 },
+    manual: { kitchen: 0 },
+  });
 });
 
 afterEach(() => {
@@ -344,7 +357,10 @@ describe("useCalibrationRun", () => {
 
     expect(await run.apply()).toBe(true);
     expect(fakes.session.apply).toHaveBeenCalledWith(run.fit.value!.offsetsMs);
-    expect(run.applied.value).toEqual({ living: 12, kitchen: 0 });
+    expect(run.applyResult.value).toEqual({
+      applied: { living: 12 },
+      manual: { kitchen: 0 },
+    });
   });
 
   it("refuses to apply while a speaker has never been heard", async () => {

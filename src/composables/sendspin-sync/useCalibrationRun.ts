@@ -34,6 +34,7 @@ import {
   MIN_BRACKET_FRACTION,
   runVerdict,
 } from "@/helpers/sendspin-sync/verdict";
+import type { CalibrationApplyResult } from "@/plugins/api/interfaces";
 import { computed, ref, watch } from "vue";
 import { useCalibrationSession } from "./useCalibrationSession";
 import { useChirpCapture } from "./useChirpCapture";
@@ -75,7 +76,7 @@ export function useCalibrationRun() {
   const phase = ref<RunPhase>("picking");
   const selected = ref<string[]>([]);
   const visits = ref<Measurement[]>([]);
-  const applied = ref<Record<string, number> | null>(null);
+  const applyResult = ref<CalibrationApplyResult | null>(null);
   const openError = ref<string | null>(null);
   /** The speaker currently being recorded, so the view can show it where it is. */
   const measuringPlayerId = ref<string | null>(null);
@@ -206,7 +207,7 @@ export function useCalibrationRun() {
     }
   }
 
-  /** Hand the offsets to the server, and keep what it actually applied. */
+  /** Hand the offsets to the server, and keep the delays it worked out. */
   async function apply(): Promise<boolean> {
     const offsets = fit.value?.offsetsMs;
     if (!offsets || !trustworthy.value) return false;
@@ -214,7 +215,7 @@ export function useCalibrationRun() {
     const result = await session.apply(offsets);
     if (!result) return false;
 
-    applied.value = result;
+    applyResult.value = result;
     return true;
   }
 
@@ -238,7 +239,7 @@ export function useCalibrationRun() {
     visits.value = [];
     samples.value = [];
     nextVisit = 0;
-    applied.value = null;
+    applyResult.value = null;
     openError.value = null;
     phase.value = "picking";
   }
@@ -271,7 +272,7 @@ export function useCalibrationRun() {
     fit,
     verdict,
     trustworthy,
-    applied,
+    applyResult,
     begin,
     measure,
     apply,

@@ -5,11 +5,12 @@ import { mount } from "@vue/test-utils";
 import { describe, expect, it } from "vitest";
 
 const PLAYERS = [
-  { player_id: "living", name: "Living room", busy: false },
-  { player_id: "kitchen", name: "Kitchen", busy: false },
+  { player_id: "living", name: "Living room", busy: false, adjustable: true },
+  { player_id: "kitchen", name: "Kitchen", busy: false, adjustable: true },
 ];
 
 const BASE = "providers.sendspin_sync.calibration.results";
+const MANUAL = "providers.sendspin_sync.calibration.manual";
 
 function fitFixture(overrides: Partial<LatencyFit> = {}): LatencyFit {
   return {
@@ -41,7 +42,7 @@ function mountResults(
         (props.fit as LatencyFit | undefined) ?? fitFixture(),
         ["living", "kitchen"],
       ),
-      applied: null,
+      applyResult: null,
       trustworthy: true,
       anchor: "living",
       disabled: false,
@@ -180,10 +181,67 @@ describe("SendspinSyncResults", () => {
   });
 
   it("shows the delay the server actually set, and will not apply twice", () => {
-    const wrapper = mountResults({ applied: { living: 12, kitchen: 0 } });
+    const wrapper = mountResults({
+      applyResult: { applied: { living: 12, kitchen: 0 }, manual: {} },
+    });
 
     expect(wrapper.findAll("li")[0].text()).toContain(`${BASE}.applied_delay`);
+    expect(wrapper.text()).not.toContain(`${MANUAL}.title`);
+    expect(wrapper.text()).not.toContain(`${MANUAL}.badge`);
     expect(applyButton(wrapper).attributes("disabled")).toBeDefined();
+  });
+
+  it("marks a speaker no delay can be written to, before anything is applied", () => {
+    const wrapper = mountResults({
+      players: [PLAYERS[0], { ...PLAYERS[1], adjustable: false }],
+    });
+
+    // The badge carries over from the picker, so the split at Apply is not a
+    // surprise. The guidance waits until there are real values to act on.
+    expect(wrapper.text()).toContain(`${MANUAL}.badge`);
+    expect(wrapper.text()).not.toContain(`${MANUAL}.title`);
+  });
+
+  it("hands over the delays nothing could be written to, prominently", () => {
+    const wrapper = mountResults({
+      players: [PLAYERS[0], { ...PLAYERS[1], adjustable: false }],
+      applyResult: { applied: { living: 0 }, manual: { kitchen: 12 } },
+    });
+
+    const [living, kitchen] = wrapper.findAll("li");
+    // An amount to add, worded so it cannot be read as the applied row's
+    // "delay set to" — the two numbers look alike and mean opposite things.
+    expect(kitchen.text()).toContain(`${MANUAL}.row`);
+    expect(kitchen.text()).not.toContain(`${BASE}.applied_delay`);
+    // Not dimmed the way a delay already in place is: this one is the deliverable
+    // for that speaker rather than a note about it.
+    expect(kitchen.find(".text-muted-foreground").exists()).toBe(false);
+    expect(living.find(".text-muted-foreground").exists()).toBe(true);
+    expect(wrapper.text()).toContain(`${MANUAL}.title`);
+  });
+
+  it("follows the server over the speaker's own flag once it has written", () => {
+    const wrapper = mountResults({
+      applyResult: { applied: { living: 0 }, manual: { kitchen: 12 } },
+    });
+
+    // Both speakers reported themselves adjustable, and the server still could
+    // not write to one. It decides that at write time, so it wins here.
+    expect(wrapper.findAll("li")[1].text()).toContain(`${MANUAL}.badge`);
+    expect(wrapper.findAll("li")[0].text()).not.toContain(`${MANUAL}.badge`);
+  });
+
+  it("treats an all-manual run as a result, not a failure", () => {
+    const wrapper = mountResults({
+      players: PLAYERS.map((player) => ({ ...player, adjustable: false })),
+      applyResult: { applied: {}, manual: { living: 0, kitchen: 12 } },
+    });
+
+    // Every delay was worked out; none of them was written. Saying "Delays
+    // applied" here would claim the speakers were changed.
+    expect(wrapper.text()).toContain(`${BASE}.worked_out`);
+    expect(wrapper.text()).not.toContain(`${BASE}.applied_delay`);
+    expect(wrapper.text()).toContain(`${MANUAL}.title`);
   });
 
   it("can be finished without applying anything", async () => {
