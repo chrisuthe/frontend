@@ -261,6 +261,57 @@ describe("useCalibrationRun", () => {
     expect(run.needsBracket.value).toBe(true);
   });
 
+  it("anchors on the speaker that was actually measured first", async () => {
+    const run = await started();
+    expect(run.anchor.value).toBeNull();
+
+    // Ticked second, walked first. The fit fixes the offset of whichever speaker
+    // it heard first at zero, so that is the speaker the repeat has to be asked
+    // of — the order the speakers were ticked in says nothing about it.
+    fakes.capture.record.mockResolvedValue(
+      recordingAt({ startSeconds: 0, offsetSeconds: 0, drift: 0 }),
+    );
+    await measure(run, "kitchen");
+    expect(run.anchor.value).toBe("kitchen");
+
+    fakes.capture.record.mockResolvedValue(
+      recordingAt({ startSeconds: 30, offsetSeconds: 0.012, drift: 0 }),
+    );
+    await measure(run, "living");
+
+    expect(run.anchor.value).toBe("kitchen");
+    expect(run.fit.value!.offsetsMs.kitchen).toBeCloseTo(0, 6);
+    expect(run.fit.value!.offsetsMs.living).toBeCloseTo(12, 1);
+  });
+
+  it("invites one more repeat while the clock rate is pinned but untested", async () => {
+    const run = await started();
+    for (const visit of [
+      { startSeconds: 0, offsetSeconds: 0, player: "living" },
+      { startSeconds: 30, offsetSeconds: 0.012, player: "kitchen" },
+      { startSeconds: 60, offsetSeconds: 0, player: "living" },
+    ]) {
+      fakes.capture.record.mockResolvedValue(
+        recordingAt({ ...visit, drift: 0 }),
+      );
+      await measure(run, visit.player);
+    }
+
+    expect(run.needsBracket.value).toBe(false);
+    expect(run.verdict.value).toBe("pinned");
+    expect(run.needsCheck.value).toBe(true);
+
+    // A second speaker read twice is the constraint the clock rate cannot absorb,
+    // so from here the run tests the rate rather than merely resting on it.
+    fakes.capture.record.mockResolvedValue(
+      recordingAt({ startSeconds: 90, offsetSeconds: 0.012, drift: 0 }),
+    );
+    await measure(run, "kitchen");
+
+    expect(run.verdict.value).toBe("checked");
+    expect(run.needsCheck.value).toBe(false);
+  });
+
   it("recovers the speaker latencies from a real walk", async () => {
     const run = await started();
     const drift = 60e-6;
@@ -511,6 +562,9 @@ describe("useCalibrationRun", () => {
     expect(run.verdict.value).toBe("short_bracket");
     expect(run.trustworthy.value).toBe(false);
     expect(run.needsBracket.value).toBe(true);
+    // And no cross-check is offered on top of it: another reading would not
+    // answer what is wrong here.
+    expect(run.needsCheck.value).toBe(false);
     expect(await run.apply()).toBe(false);
   });
 

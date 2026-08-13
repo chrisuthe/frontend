@@ -1882,7 +1882,7 @@
                 },
                 "pick": {
                     "title": "Choose the speakers",
-                    "description": "Pick the speakers you want evened out. You will walk to each one in the order you tick them, so start with the one you can easily come back to at the end.",
+                    "description": "Pick the speakers you want evened out. The walk then takes you through them one at a time, and you choose where to start.",
                     "legend": "Speakers to calibrate",
                     "minimum": "Pick at least two speakers — calibration measures them against each other.",
                     "manual": "Speakers marked \"Manual delay\" can't be adjusted from here, but they are still worth measuring — you will get an amount to add to the delay the speaker already applies.",
@@ -1899,16 +1899,33 @@
                     }
                 },
                 "walk": {
-                    "title": "Walk to each speaker",
-                    "description": "Stand next to a speaker, hold the phone towards it at arm's length, then tap Measure and keep still. Distance matters: every 34 cm you stand back adds about a millisecond.",
                     "measure": "Measure",
                     "again": "Measure again",
                     "not_measured": "Not measured yet",
                     "found": "Heard {0} of {1} chirps",
+                    "how": "Stand next to the speaker, hold the phone towards it at arm's length, then tap it and keep still. Distance matters: every 34 cm you stand back adds about a millisecond.",
                     "listening": "Listening — keep the phone still and the screen on.",
-                    "bracket": {
-                        "title": "One more to go",
-                        "description": "Go back to {0} and measure it again. Measuring one speaker at both ends of the walk is what pins down this phone's own clock drift; without it the other readings cannot be separated from it. Measuring a second speaker twice as well is optional, and cross-checks the result."
+                    "step": {
+                        "start": {
+                            "title": "Walk to the speaker you want to start at",
+                            "description": "Every other speaker is measured against this one, and the walk sends you back to it at the end — so start at one you can easily come back to."
+                        },
+                        "next": {
+                            "title": "Walk to a speaker you have not measured yet",
+                            "description": "Measured {0} of {1}. Take them in whatever order suits the room."
+                        },
+                        "repeat": {
+                            "title": "Walk back to {0}",
+                            "description": "Measure {0} a second time. Reading one speaker at both ends of the walk is what pins down how much this phone's own clock drifted while you walked, and until that is known none of the other readings can be told apart from it."
+                        },
+                        "check": {
+                            "title": "Measure {0} again to check the walk",
+                            "description": "These readings are already good enough to apply. But the repeat you just took is what set this phone's clock drift, so it cannot also check it — a second reading of {0} can. Stop here if you would rather; the results below say either way whether the run was checked."
+                        },
+                        "done": {
+                            "title": "Every speaker measured",
+                            "description": "The results are below. Measure any speaker again if you want to."
+                        }
                     }
                 },
                 "results": {
