@@ -1883,7 +1883,7 @@
                 },
                 "pick": {
                     "title": "Choose the speakers",
-                    "description": "Select the speakers to fine-tune the sync for. The walk then takes you through them one at a time, and you choose where to start.",
+                    "description": "Pick every speaker you want playing in sync with each other, in one run. A speaker left out will not stay in sync with the ones included, and calibrating a different set later replaces this run rather than adding to it. The walk then takes you through them one at a time, and you choose where to start.",
                     "legend": "Speakers to calibrate",
                     "minimum": "Pick at least two speakers — calibration measures them against each other.",
                     "manual": "Speakers marked \"Manual delay\" can't be adjusted from here, but they are still worth measuring — you will get an amount to add to the delay the speaker already applies.",
