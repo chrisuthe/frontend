@@ -1,6 +1,6 @@
 import SendspinSyncResults from "@/components/sendspin-sync/SendspinSyncResults.vue";
 import type { LatencyFit } from "@/helpers/sendspin-sync/latencyFit";
-import { runVerdict } from "@/helpers/sendspin-sync/verdict";
+import { runVerdict, type CaptureLoss } from "@/helpers/sendspin-sync/verdict";
 import { mount } from "@vue/test-utils";
 import { describe, expect, it } from "vitest";
 
@@ -29,6 +29,9 @@ function fitFixture(overrides: Partial<LatencyFit> = {}): LatencyFit {
   };
 }
 
+/** A run whose recordings heard everything, which one case below spoils. */
+const CLEAN: CaptureLoss = { dropouts: 0, worstFraction: 0 };
+
 function mountResults(
   props: Partial<InstanceType<typeof SendspinSyncResults>["$props"]> = {},
 ) {
@@ -37,11 +40,13 @@ function mountResults(
       players: PLAYERS,
       selected: ["living", "kitchen"],
       fit: fitFixture(),
+      loss: CLEAN,
       // Derived rather than hand-set, so a test cannot describe a run the verdict
       // helper would never actually produce.
       verdict: runVerdict(
         (props.fit as LatencyFit | undefined) ?? fitFixture(),
         ["living", "kitchen"],
+        (props.loss as CaptureLoss | undefined) ?? CLEAN,
       ),
       applyResult: null,
       trustworthy: true,
@@ -99,6 +104,31 @@ describe("SendspinSyncResults", () => {
     });
 
     expect(wrapper.text()).toContain(`${BASE}.check.unbracketed.title`);
+    expect(applyButton(wrapper)).toBeUndefined();
+  });
+
+  it("reports what the recording lost, alongside the chirps it used", () => {
+    const wrapper = mountResults({
+      loss: { dropouts: 7, worstFraction: 0.003 },
+    });
+
+    // A thin arrival count is explained by a recording with holes in it, and
+    // there is nothing else on the panel that would say so.
+    expect(wrapper.text()).toContain(`${BASE}.gaps`);
+    expect(wrapper.text()).toContain(`${BASE}.lost 7 0.3`);
+  });
+
+  it("blames the phone's recording, not the speakers, when it had gaps", () => {
+    const wrapper = mountResults({
+      // The reported walk: an impossible rate and scatter everywhere, all of it
+      // downstream of a phone that dropped four and a half per cent of a reading.
+      fit: fitFixture({ rateErrorPpm: -6868, residualMs: 14 }),
+      loss: { dropouts: 96, worstFraction: 0.045 },
+      trustworthy: false,
+    });
+
+    expect(wrapper.text()).toContain(`${BASE}.check.lossy.title`);
+    expect(wrapper.text()).toContain(`${BASE}.check.lossy.description 4.5 1`);
     expect(applyButton(wrapper)).toBeUndefined();
   });
 

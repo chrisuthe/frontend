@@ -16,6 +16,7 @@ function reading(overrides: Partial<Measurement> = {}): Measurement {
     expected: 10,
     medianSnr: 40,
     dropouts: 0,
+    lostFraction: 0,
     ...overrides,
   };
 }

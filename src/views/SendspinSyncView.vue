@@ -79,6 +79,7 @@
           :players="players"
           :selected="selected"
           :fit="fit"
+          :loss="loss"
           :verdict="verdict"
           :apply-result="applyResult"
           :trustworthy="trustworthy"
@@ -145,6 +146,7 @@ const {
   needsBracket,
   remaining,
   fit,
+  loss,
   verdict,
   trustworthy,
   applyResult,

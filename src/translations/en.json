@@ -1923,11 +1923,17 @@
                     "scatter_row": "{0}: {1} ms",
                     "arrivals": "Chirps used",
                     "used": "{0} used, {1} discarded",
+                    "gaps": "Recording gaps",
+                    "lost": "{0} dropouts, {1}% of a reading",
                     "apply": "Apply these delays",
                     "applied": "Delays applied",
                     "worked_out": "Delays worked out",
                     "finish": "Finish and release the speakers",
                     "check": {
+                        "lossy": {
+                            "title": "This phone's recording had gaps in it",
+                            "description": "{0}% of one reading never reached the browser, more than the {1}% its chirps can be read through. This is about the recording and nothing else — the speakers are fine, and so is the way you walked. There is no need to hurry between speakers; the time spent walking costs the measurement nothing. A phone drops audio when it is busy elsewhere, so close other apps, leave the screen on, keep this tab in front of you for the whole walk, and measure again."
+                        },
                         "unindexable": {
                             "title": "These speakers are too far apart to measure together",
                             "description": "Their delays span {0} ms, and a speaker can only be placed while it stays inside {1} ms of the others — past that, a late arrival is indistinguishable from an early one on the following chirp, and these readings would rest on the order you walked in rather than on the room. That is the edge of what the measurement can say, and walking differently will not move it. Calibrate a group whose delays sit closer together: leaving out the speaker you know to be slowest, usually one on Bluetooth, is normally enough."

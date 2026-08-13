@@ -101,6 +101,13 @@
         <dd class="font-mono">
           {{ $t(`${KEYS}.results.used`, [fit.used, fit.rejected]) }}
         </dd>
+        <!-- Next to the chirps because the two are read together: arrivals
+             thinner than expected are explained by a recording with holes in it,
+             and there is nothing else on this panel that would say so. -->
+        <dt class="text-muted-foreground">{{ $t(`${KEYS}.results.gaps`) }}</dt>
+        <dd class="font-mono">
+          {{ $t(`${KEYS}.results.lost`, [loss.dropouts, lostPercent]) }}
+        </dd>
       </dl>
     </CardContent>
 
@@ -144,9 +151,11 @@ import {
 } from "@/helpers/sendspin-sync/latencyFit";
 import {
   BRACKET_LIMIT_MS,
+  MAX_LOST_FRACTION,
   offsetSpanMs,
   SCATTER_LIMIT_MS,
   worstSpreadMs,
+  type CaptureLoss,
   type RunVerdict,
 } from "@/helpers/sendspin-sync/verdict";
 import type {
@@ -162,6 +171,7 @@ const {
   players,
   selected,
   fit,
+  loss,
   verdict,
   applyResult,
   trustworthy,
@@ -172,6 +182,8 @@ const {
   /** Every speaker the run set out to measure, in the order it walked them. */
   selected: string[];
   fit: LatencyFit;
+  /** What the run's recordings lost, which the fit itself cannot show. */
+  loss: CaptureLoss;
   verdict: RunVerdict;
   /** The delays the server worked out, split by whether it could write them. */
   applyResult: CalibrationApplyResult | null;
@@ -209,9 +221,14 @@ const scatterRows = computed(() =>
     })),
 );
 
+/** The worst single recording's loss, as a percentage for the reader. */
+const lostPercent = computed(() => (loss.worstFraction * 100).toFixed(1));
+
 /** The readings the verdict's wording needs filled in. */
 const verdictValues = computed(() => {
   switch (verdict) {
+    case "lossy":
+      return [lostPercent.value, MAX_LOST_FRACTION * 100];
     case "unindexable":
       return [offsetSpanMs(fit).toFixed(0), MAX_OFFSET_SPAN_MS];
     case "irreconcilable":

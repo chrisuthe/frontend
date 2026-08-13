@@ -5,13 +5,18 @@ import {
 } from "@/helpers/sendspin-sync/latencyFit";
 import {
   isApplicable,
+  MAX_LOST_FRACTION,
   offsetSpanMs,
   runVerdict,
   worstSpreadMs,
+  type CaptureLoss,
 } from "@/helpers/sendspin-sync/verdict";
 import { describe, expect, it } from "vitest";
 
 const SELECTED = ["living", "kitchen"];
+
+/** A run whose recordings heard everything, which one case below spoils. */
+const CLEAN: CaptureLoss = { dropouts: 0, worstFraction: 0 };
 
 function visit(overrides: Partial<VisitFit> = {}): VisitFit {
   return {
@@ -45,10 +50,59 @@ function fitFixture(overrides: Partial<LatencyFit> = {}): LatencyFit {
 
 describe("runVerdict", () => {
   it("says the rate is pinned when one repeat set it and nothing is wrong", () => {
-    const verdict = runVerdict(fitFixture(), SELECTED);
+    const verdict = runVerdict(fitFixture(), SELECTED, CLEAN);
 
     expect(verdict).toBe("pinned");
     expect(isApplicable(verdict)).toBe(true);
+  });
+
+  it("blames the recording before anything the recording was of", () => {
+    // A phone that dropped this much audio produces exactly the readings below —
+    // speakers that cannot be placed, an impossible clock, arrivals all over the
+    // line. Every one of those verdicts would send the reader to the speakers or
+    // to how they walked, and none of it is the fault.
+    const verdict = runVerdict(
+      fitFixture({
+        offsetsMs: { living: 0, kitchen: 400 },
+        rateErrorPpm: -6868,
+        residualMs: 14,
+      }),
+      SELECTED,
+      { dropouts: 96, worstFraction: 0.045 },
+    );
+
+    expect(verdict).toBe("lossy");
+    expect(isApplicable(verdict)).toBe(false);
+  });
+
+  it("lets a recording with the odd hole in it through", () => {
+    // Holes are measured against the render clock and keep their length, so a few
+    // cost nothing but the chirps that fell in them. These two sit either side of
+    // where enough have gone missing for that to stop being true.
+    expect(
+      runVerdict(fitFixture(), SELECTED, {
+        dropouts: 15,
+        worstFraction: MAX_LOST_FRACTION,
+      }),
+    ).toBe("pinned");
+    expect(
+      runVerdict(fitFixture(), SELECTED, {
+        dropouts: 25,
+        worstFraction: MAX_LOST_FRACTION * 1.5,
+      }),
+    ).toBe("lossy");
+  });
+
+  it("judges the worst recording, not the run's total", () => {
+    // One spoiled reading moves the speaker it belongs to, however many clean
+    // recordings surround it — so the count says a lot happened and the fraction
+    // is what decides.
+    expect(
+      runVerdict(fitFixture(), SELECTED, {
+        dropouts: 400,
+        worstFraction: 0.004,
+      }),
+    ).toBe("pinned");
   });
 
   it("refuses speakers further apart than a chirp train can place, first of all", () => {
@@ -61,6 +115,7 @@ describe("runVerdict", () => {
         rateErrorPpm: -3318.7,
       }),
       SELECTED,
+      CLEAN,
     );
 
     expect(verdict).toBe("unindexable");
@@ -74,12 +129,14 @@ describe("runVerdict", () => {
       runVerdict(
         fitFixture({ offsetsMs: { living: 0, kitchen: 240 } }),
         SELECTED,
+        CLEAN,
       ),
     ).toBe("pinned");
     expect(
       runVerdict(
         fitFixture({ offsetsMs: { living: 0, kitchen: 260 } }),
         SELECTED,
+        CLEAN,
       ),
     ).toBe("unindexable");
   });
@@ -94,6 +151,7 @@ describe("runVerdict", () => {
           offsetsMs: { living: 0, kitchen: MAX_OFFSET_SPAN_MS },
         }),
         SELECTED,
+        CLEAN,
       ),
     ).toBe("unindexable");
   });
@@ -110,6 +168,7 @@ describe("runVerdict", () => {
         residualMs: 17.03,
       }),
       SELECTED,
+      CLEAN,
     );
 
     expect(verdict).toBe("irreconcilable");
@@ -119,9 +178,9 @@ describe("runVerdict", () => {
   it("lets a poor but possible clock through to the other checks", () => {
     // The microphone probe calls 1000 ppm degraded and still lets the run go
     // ahead, so the refusal has to sit above it rather than duplicate it.
-    expect(runVerdict(fitFixture({ rateErrorPpm: 1000 }), SELECTED)).toBe(
-      "pinned",
-    );
+    expect(
+      runVerdict(fitFixture({ rateErrorPpm: 1000 }), SELECTED, CLEAN),
+    ).toBe("pinned");
   });
 
   it("names an unheard speaker ahead of anything else that is wrong", () => {
@@ -134,6 +193,7 @@ describe("runVerdict", () => {
         residualMs: 9,
       }),
       SELECTED,
+      CLEAN,
     );
 
     expect(verdict).toBe("unmeasured");
@@ -141,9 +201,9 @@ describe("runVerdict", () => {
   });
 
   it("refuses a run where nothing was measured twice", () => {
-    expect(runVerdict(fitFixture({ bracketSpanSeconds: null }), SELECTED)).toBe(
-      "unbracketed",
-    );
+    expect(
+      runVerdict(fitFixture({ bracketSpanSeconds: null }), SELECTED, CLEAN),
+    ).toBe("unbracketed");
   });
 
   it("refuses a bracket too short to pin the rate over the run", () => {
@@ -152,18 +212,20 @@ describe("runVerdict", () => {
       runVerdict(
         fitFixture({ bracketSpanSeconds: 40, runSpanSeconds: 100 }),
         SELECTED,
+        CLEAN,
       ),
     ).toBe("short_bracket");
     expect(
       runVerdict(
         fitFixture({ bracketSpanSeconds: 60, runSpanSeconds: 100 }),
         SELECTED,
+        CLEAN,
       ),
     ).toBe("pinned");
   });
 
   it("refuses a run whose arrivals do not sit on the line", () => {
-    expect(runVerdict(fitFixture({ residualMs: 1.5 }), SELECTED)).toBe(
+    expect(runVerdict(fitFixture({ residualMs: 1.5 }), SELECTED, CLEAN)).toBe(
       "scattered",
     );
   });
@@ -180,6 +242,7 @@ describe("runVerdict", () => {
         ],
       }),
       SELECTED,
+      CLEAN,
     );
 
     expect(verdict).toBe("scattered");
@@ -187,19 +250,23 @@ describe("runVerdict", () => {
   });
 
   it("reports a genuine cross-check, in both directions", () => {
-    expect(runVerdict(fitFixture({ bracketResidualMs: 0.4 }), SELECTED)).toBe(
-      "checked",
-    );
-    expect(runVerdict(fitFixture({ bracketResidualMs: 2 }), SELECTED)).toBe(
-      "disagrees",
-    );
+    expect(
+      runVerdict(fitFixture({ bracketResidualMs: 0.4 }), SELECTED, CLEAN),
+    ).toBe("checked");
+    expect(
+      runVerdict(fitFixture({ bracketResidualMs: 2 }), SELECTED, CLEAN),
+    ).toBe("disagrees");
   });
 
   it("prefers a disagreement over the scatter it also causes", () => {
     // Repeats that disagree also widen the scatter, and "walk it again" is more
     // use to the reader than "something moved".
     expect(
-      runVerdict(fitFixture({ bracketResidualMs: 3, residualMs: 2 }), SELECTED),
+      runVerdict(
+        fitFixture({ bracketResidualMs: 3, residualMs: 2 }),
+        SELECTED,
+        CLEAN,
+      ),
     ).toBe("disagrees");
   });
 
@@ -207,6 +274,7 @@ describe("runVerdict", () => {
     expect(isApplicable("pinned")).toBe(true);
     expect(isApplicable("checked")).toBe(true);
     for (const verdict of [
+      "lossy",
       "unindexable",
       "irreconcilable",
       "unmeasured",

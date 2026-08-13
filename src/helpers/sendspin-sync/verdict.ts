@@ -17,6 +17,8 @@ import {
 } from "./latencyFit";
 
 export type RunVerdict =
+  /** The phone's recording had too much missing from it to read. */
+  | "lossy"
   /** The speakers are further apart than one chirp train can place them. */
   | "unindexable"
   /** The arrivals only fit a clock rate no clock could have. */
@@ -66,9 +68,46 @@ export const VISIT_SPREAD_LIMIT_MS = 1;
  */
 export const MIN_BRACKET_FRACTION = 0.5;
 
+/**
+ * What share of a single recording may be missing before its arrivals stop
+ * being readings.
+ *
+ * Every hole the capture can see is measured against the render clock and keeps
+ * its true length, so the timeline itself survives a lossy stretch; what does not
+ * survive is the audio. A chirp is 60 ms of a 500 ms period, so about an eighth
+ * of a lost quantum's chances fall inside one, and a five and a half second
+ * recording holds eleven chirps. At one per cent — some 55 ms, or twenty render
+ * quanta — two or three chirps expect to be nicked and the rest come through
+ * clean, which the outlier pass is there for. Past it a whole chirp can go
+ * missing and the survivors are being read out of a recording with holes in them,
+ * where nothing downstream can tell the room from the gaps.
+ *
+ * Loss between speakers is not counted and costs nothing: the clock accounts for
+ * it and no chirp was being listened for. This is about the recordings only.
+ */
+export const MAX_LOST_FRACTION = 0.01;
+
+/** What a run's recordings lost, and how much of one recording it was. */
+export interface CaptureLoss {
+  /** Render quanta of audio the run's recordings never heard. */
+  dropouts: number;
+  /** The largest share any single recording lost, 0 to 1. */
+  worstFraction: number;
+}
+
 /** Judge a finished fit against the speakers the run set out to measure. */
-export function runVerdict(fit: LatencyFit, selected: string[]): RunVerdict {
-  // Ahead of everything, because it is not one thing wrong with the run but the
+export function runVerdict(
+  fit: LatencyFit,
+  selected: string[],
+  loss: CaptureLoss,
+): RunVerdict {
+  // First of all, because it is about the recording rather than about anything
+  // the recording was of. A run this lossy will usually also read as scattered or
+  // as speakers that cannot be placed, and every one of those would send the user
+  // to the speakers or to how they walked — when what needs fixing is the phone.
+  if (loss.worstFraction > MAX_LOST_FRACTION) return "lossy";
+
+  // Ahead of the rest, because it is not one thing wrong with the run but the
   // boundary of what the measurement means: past half a chirp period an arrival
   // could have come from either of two chirps, so every offset here is one
   // reading of the recording rather than the reading. It also comes ahead of the
