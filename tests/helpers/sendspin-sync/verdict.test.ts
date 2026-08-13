@@ -1,6 +1,11 @@
-import type { LatencyFit, VisitFit } from "@/helpers/sendspin-sync/latencyFit";
+import {
+  MAX_OFFSET_SPAN_MS,
+  type LatencyFit,
+  type VisitFit,
+} from "@/helpers/sendspin-sync/latencyFit";
 import {
   isApplicable,
+  offsetSpanMs,
   runVerdict,
   worstSpreadMs,
 } from "@/helpers/sendspin-sync/verdict";
@@ -46,11 +51,58 @@ describe("runVerdict", () => {
     expect(isApplicable(verdict)).toBe(true);
   });
 
+  it("refuses speakers further apart than a chirp train can place, first of all", () => {
+    // Half a period is the whole of what the chirp train has to say, so past it
+    // the offsets are one reading of the recording rather than the reading — and
+    // the impossible rate this also shows up as is the same fault at one remove.
+    const verdict = runVerdict(
+      fitFixture({
+        offsetsMs: { living: 0, kitchen: 400 },
+        rateErrorPpm: -3318.7,
+      }),
+      SELECTED,
+    );
+
+    expect(verdict).toBe("unindexable");
+    expect(isApplicable(verdict)).toBe(false);
+  });
+
+  it("lets speakers just inside half a period through", () => {
+    // The limit is the measurement's own edge rather than a judgement about how
+    // good a run is, so these two sit either side of it.
+    expect(
+      runVerdict(
+        fitFixture({ offsetsMs: { living: 0, kitchen: 240 } }),
+        SELECTED,
+      ),
+    ).toBe("pinned");
+    expect(
+      runVerdict(
+        fitFixture({ offsetsMs: { living: 0, kitchen: 260 } }),
+        SELECTED,
+      ),
+    ).toBe("unindexable");
+  });
+
+  it("refuses a span sitting exactly on half a period", () => {
+    // Half a period is the one span where an arrival is as close to the next
+    // chirp as to its own, so the rounding that placed it was a coin flip. It is
+    // refused rather than admitted, which is what "inside half a period" means.
+    expect(
+      runVerdict(
+        fitFixture({
+          offsetsMs: { living: 0, kitchen: MAX_OFFSET_SPAN_MS },
+        }),
+        SELECTED,
+      ),
+    ).toBe("unindexable");
+  });
+
   it("refuses a rate no clock could have, ahead of everything else", () => {
-    // One chirp period misassigned across a two and a half minute walk. Worst
-    // first, and this is the worst there is: the arrivals were reconciled onto
-    // the wrong chirp, so the missing speaker and the scatter it also shows are
-    // symptoms rather than the fault.
+    // One chirp period misassigned across a two and a half minute walk, landing
+    // on the anchor where the offsets cannot show it. Worst first, and this is
+    // the worst there is: the missing speaker and the scatter this run also shows
+    // are symptoms rather than the fault.
     const verdict = runVerdict(
       fitFixture({
         rateErrorPpm: -3318.7,
@@ -155,6 +207,7 @@ describe("runVerdict", () => {
     expect(isApplicable("pinned")).toBe(true);
     expect(isApplicable("checked")).toBe(true);
     for (const verdict of [
+      "unindexable",
       "irreconcilable",
       "unmeasured",
       "unbracketed",
@@ -163,6 +216,32 @@ describe("runVerdict", () => {
       "disagrees",
     ] as const)
       expect(isApplicable(verdict)).toBe(false);
+  });
+});
+
+describe("offsetSpanMs", () => {
+  it("spans every speaker, the anchor's own zero included", () => {
+    // The anchor is what the others are read against, so a run where everything
+    // sits behind it is as wide as its furthest speaker.
+    expect(
+      offsetSpanMs(fitFixture({ offsetsMs: { living: 0, kitchen: 260 } })),
+    ).toBe(260);
+    // And one that straddles the anchor is as wide as both sides together, which
+    // is the figure the limit is about.
+    expect(
+      offsetSpanMs(
+        fitFixture({ offsetsMs: { living: 0, kitchen: 200, study: -120 } }),
+      ),
+    ).toBe(320);
+  });
+
+  it("is zero when only the anchor was heard", () => {
+    expect(offsetSpanMs(fitFixture({ offsetsMs: { living: 0 } }))).toBe(0);
+    expect(offsetSpanMs(fitFixture({ offsetsMs: {} }))).toBe(0);
+  });
+
+  it("stays inside the limit on a run that came out well", () => {
+    expect(offsetSpanMs(fitFixture())).toBeLessThan(MAX_OFFSET_SPAN_MS);
   });
 });
 

@@ -6,9 +6,10 @@
     </CardHeader>
 
     <CardContent class="space-y-4">
-      <!-- A run whose arrivals landed on the wrong chirp has offsets, and they
-           mean nothing. Showing them next to the reason they cannot be believed
-           would only invite someone to copy them onto a speaker by hand. -->
+      <!-- A run whose arrivals could not be placed on the chirp train has
+           offsets, and they mean nothing. Showing them next to the reason they
+           cannot be believed would only invite someone to copy them onto a
+           speaker by hand. -->
       <ul v-if="usable" class="divide-y border-t">
         <li
           v-for="row in rows"
@@ -137,11 +138,13 @@ import {
 } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import {
+  MAX_OFFSET_SPAN_MS,
   MAX_PLAUSIBLE_RATE_PPM,
   type LatencyFit,
 } from "@/helpers/sendspin-sync/latencyFit";
 import {
   BRACKET_LIMIT_MS,
+  offsetSpanMs,
   SCATTER_LIMIT_MS,
   worstSpreadMs,
   type RunVerdict,
@@ -191,7 +194,9 @@ function nameOf(playerId: string): string {
 const anchorName = computed(() => (anchor ? nameOf(anchor) : ""));
 
 /** Whether this run's offsets are readings at all, however far they can be trusted. */
-const usable = computed(() => verdict !== "irreconcilable");
+const usable = computed(
+  () => verdict !== "irreconcilable" && verdict !== "unindexable",
+);
 
 /** Every measured speaker's own scatter, worst first, so the odd one out leads. */
 const scatterRows = computed(() =>
@@ -207,6 +212,8 @@ const scatterRows = computed(() =>
 /** The readings the verdict's wording needs filled in. */
 const verdictValues = computed(() => {
   switch (verdict) {
+    case "unindexable":
+      return [offsetSpanMs(fit).toFixed(0), MAX_OFFSET_SPAN_MS];
     case "irreconcilable":
       return [fit.rateErrorPpm.toFixed(0), MAX_PLAUSIBLE_RATE_PPM];
     case "unmeasured":

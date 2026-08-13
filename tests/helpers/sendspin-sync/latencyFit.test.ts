@@ -1,13 +1,23 @@
 import { CHIRP_PERIOD_SECONDS } from "@/helpers/sendspin-sync/chirp";
 import {
   fitLatencies,
+  MAX_OFFSET_SPAN_MS,
   MAX_PLAUSIBLE_RATE_PPM,
-  wrapToPeriod,
   type ArrivalSample,
 } from "@/helpers/sendspin-sync/latencyFit";
 import { describe, expect, it } from "vitest";
 
 const CHIRPS_PER_VISIT = 10;
+
+/**
+ * Where the run's first arrival lands on the recording, in seconds.
+ *
+ * Neither zero nor a whole number of periods. The fit carries a constant for the
+ * microphone's own input latency and for the chirp the session happened to start
+ * on, and a fixture whose first arrival sits at zero cannot tell a fit that
+ * solves for that constant from one that assumes it away.
+ */
+const RECORDING_START_SECONDS = 3.31;
 
 interface Visit {
   playerId: string;
@@ -18,10 +28,11 @@ interface Visit {
 /**
  * Build arrivals that satisfy the model exactly.
  *
- * The phone's arrival time for a chirp follows from inverting
- * `wrap(at) = drift * at + offset`, which is what the fit has to undo. Solving
- * it forward rather than approximating keeps the expected answer exact, so a
- * failure means the estimator is wrong and not that the fixture was sloppy.
+ * A chirp emitted `chirp` periods into the server's train is heard `offset` later
+ * and stamped by a phone whose clock runs `drift` fast, so it lands at
+ * `start + (1 + drift) * chirp * period + offset`. Generating the model forward
+ * rather than approximating it keeps the expected answer exact, so a failure
+ * means the estimator is wrong and not that the fixture was sloppy.
  */
 function synthesize(
   visits: Visit[],
@@ -31,13 +42,22 @@ function synthesize(
   return visits.flatMap((visit, index) =>
     Array.from({ length: CHIRPS_PER_VISIT }, (_, step) => {
       const chirp = visit.fromChirp + step;
-      const offset = offsets[visit.playerId];
       return {
         visit: index,
         playerId: visit.playerId,
-        at: (chirp * CHIRP_PERIOD_SECONDS + offset) / (1 - drift),
+        at:
+          RECORDING_START_SECONDS +
+          (1 + drift) * chirp * CHIRP_PERIOD_SECONDS +
+          offsets[visit.playerId],
       };
     }),
+  );
+}
+
+/** Reduce a span of seconds to its distance from the nearest whole period. */
+function wrapToPeriod(seconds: number): number {
+  return (
+    seconds - CHIRP_PERIOD_SECONDS * Math.round(seconds / CHIRP_PERIOD_SECONDS)
   );
 }
 
@@ -48,6 +68,12 @@ function meanPhase(samples: ArrivalSample[], playerId: string): number {
     .filter((sample) => sample.playerId === playerId)
     .map((sample) => wrapToPeriod(sample.at - reference));
   return phases.reduce((total, value) => total + value, 0) / phases.length;
+}
+
+/** How far apart the furthest two speakers came out, in milliseconds. */
+function offsetSpanMs(offsetsMs: Record<string, number>): number {
+  const offsets = Object.values(offsetsMs);
+  return Math.max(...offsets) - Math.min(...offsets);
 }
 
 /** Deterministic jitter, so a failure is always reproducible. */
@@ -68,15 +94,6 @@ const WALK: Visit[] = [
 ];
 
 const OFFSETS = { living: 0, kitchen: 0.012, study: -0.007 };
-
-describe("wrapToPeriod", () => {
-  it("keeps a span inside half a period either side of zero", () => {
-    expect(wrapToPeriod(0.01)).toBeCloseTo(0.01, 12);
-    expect(wrapToPeriod(100.01)).toBeCloseTo(0.01, 12);
-    expect(wrapToPeriod(99.99)).toBeCloseTo(-0.01, 12);
-    expect(wrapToPeriod(-0.01)).toBeCloseTo(-0.01, 12);
-  });
-});
 
 describe("fitLatencies", () => {
   it("recovers the clock rate and every offset from exact arrivals", () => {
@@ -179,6 +196,20 @@ describe("fitLatencies", () => {
     expect(fit.offsetsMs.study).toBeCloseTo(-7, 3);
   });
 
+  it("survives a reflection heard in place of a visit's first arrival", () => {
+    const samples = synthesize(WALK, OFFSETS, 40e-6);
+    // The chirp that opens the study reading is missed and an echo is taken for
+    // it. Every chirp number in that visit is counted from its first arrival, so
+    // a bad one there would otherwise move the whole visit.
+    samples[20] = { ...samples[20], at: samples[20].at + 0.04 };
+
+    const fit = fitLatencies(samples)!;
+    expect(fit.rejected).toBe(1);
+    expect(fit.offsetsMs.kitchen).toBeCloseTo(12, 3);
+    expect(fit.offsetsMs.study).toBeCloseTo(-7, 3);
+    expect(fit.rateErrorPpm).toBeCloseTo(40, 1);
+  });
+
   it("fits the drift out, which a per-speaker average cannot", () => {
     // 120 ppm across a 100 second walk: within spec for a consumer crystal, and
     // already an order of magnitude above the offsets being measured.
@@ -196,8 +227,9 @@ describe("fitLatencies", () => {
   it("survives a drift big enough to wrap the phase right round", () => {
     // 1000 ppm is the point the microphone probe starts warning at, so it is a
     // clock the flow still lets through. Across a ten minute walk the drift term
-    // passes a whole period: wrapping every arrival against one fixed reference
-    // would fold here and report a confident wrong answer.
+    // passes a whole period: numbering every arrival against one fixed arrival
+    // would fold here and report a confident wrong answer, which is why each
+    // visit is numbered against the one before it instead.
     const walk: Visit[] = [
       { playerId: "living", fromChirp: 0 },
       { playerId: "kitchen", fromChirp: 300 },
@@ -217,40 +249,58 @@ describe("fitLatencies", () => {
     expect(fit.bracketSpanSeconds!).toBeCloseTo(600.6, 1);
   });
 
-  it("takes the branch a real clock could have, not the nearest one", () => {
-    // The walk that produced -3318.7 ppm on a phone. Three speakers spread over
-    // most of a chirp period — ordinary once one of them is on Bluetooth — and
-    // the anchor measured again 150 seconds after it was first heard. Pinning
-    // each visit to the one before it walks the phase up to 0.4 s by the third
-    // speaker, so the closing reading of the anchor lands a whole period out and
-    // the drift term swallows it: 0.5 s over 150 s is 3333 ppm.
+  it("indexes straight through the silences a walk is made of", () => {
+    // The two runs that came back -3318 and -5326 ppm from a phone. Both were a
+    // whole chirp period misassigned across a silence — half a second over the
+    // 150 s and 94 s those walks took — and this one carries both silences, with
+    // the widest offset spread seen in testing. The phone recorded throughout, so
+    // the chirps that went by during each silence are counted rather than
+    // guessed, and there is no branch left to get wrong.
     const walk: Visit[] = [
       { playerId: "living", fromChirp: 0 },
-      { playerId: "kitchen", fromChirp: 150 },
-      { playerId: "study", fromChirp: 250 },
-      { playerId: "living", fromChirp: 300 },
+      { playerId: "kitchen", fromChirp: 309 },
+      { playerId: "study", fromChirp: 506 },
+      { playerId: "living", fromChirp: 815 },
     ];
-    const offsets = { living: 0, kitchen: 0.2, study: 0.4 };
+    const offsets = { living: 0, kitchen: 0.116, study: -0.004 };
 
     const fit = fitLatencies(synthesize(walk, offsets, 5e-6))!;
 
-    expect(fit.rateErrorPpm).toBeCloseTo(5, 1);
+    expect(fit.rateErrorPpm).toBeCloseTo(5, 6);
     expect(Math.abs(fit.rateErrorPpm)).toBeLessThan(MAX_PLAUSIBLE_RATE_PPM);
+    expect(fit.offsetsMs.living).toBeCloseTo(0, 9);
+    expect(fit.offsetsMs.kitchen).toBeCloseTo(116, 6);
+    expect(fit.offsetsMs.study).toBeCloseTo(-4, 6);
+    // Scatter is what is left over once the line is subtracted, so a run this
+    // clean has to come back at detection precision rather than carrying fit
+    // error the offsets above have already absorbed.
     expect(fit.residualMs).toBeLessThan(0.001);
-    // A phase-only fit can only ever place an offset within the period, so the
-    // recovered figures are the true ones give or take a whole one.
-    for (const [playerId, offset] of Object.entries(offsets))
-      expect(wrapToPeriod(fit.offsetsMs[playerId] / 1000 - offset)).toBeCloseTo(
-        0,
-        6,
-      );
+    for (const scatter of Object.values(fit.scatterMs))
+      expect(scatter).toBeLessThan(0.001);
+  });
+
+  it("leaves speakers spread past half a period visible in the offsets", () => {
+    // Three speakers 200 ms apart in turn, the furthest 400 ms behind the first.
+    // Each step is placeable, so these are the delays the room really has — but
+    // the reading rests on the order they were walked in, and the span says so
+    // where `runVerdict` can refuse on it.
+    const walk: Visit[] = [
+      { playerId: "living", fromChirp: 0 },
+      { playerId: "kitchen", fromChirp: 150 },
+      { playerId: "study", fromChirp: 300 },
+    ];
+
+    const fit = fitLatencies(
+      synthesize(walk, { living: 0, kitchen: 0.2, study: 0.4 }, 5e-6),
+    )!;
+
+    expect(offsetSpanMs(fit.offsetsMs)).toBeGreaterThan(MAX_OFFSET_SPAN_MS);
   });
 
   it("still reports an impossible rate the arrivals genuinely carry", () => {
-    // 5000 ppm across gaps short enough that nothing is misassigned: the fit is
-    // the only one the arrivals admit, and no branch shift fits them better. It
-    // comes back so the verdict can refuse the run and say why, rather than the
-    // panel quietly having nothing to show.
+    // 5000 ppm across silences short enough that nothing is misassigned: the fit
+    // is the only one the arrivals admit. It comes back so the verdict can refuse
+    // the run and say why, rather than the panel quietly having nothing to show.
     const walk: Visit[] = [
       { playerId: "living", fromChirp: 0 },
       { playerId: "kitchen", fromChirp: 80 },
@@ -261,6 +311,7 @@ describe("fitLatencies", () => {
 
     expect(fit.rateErrorPpm).toBeCloseTo(5000, 0);
     expect(Math.abs(fit.rateErrorPpm)).toBeGreaterThan(MAX_PLAUSIBLE_RATE_PPM);
+    expect(offsetSpanMs(fit.offsetsMs)).toBeLessThan(MAX_OFFSET_SPAN_MS);
   });
 
   it("reports each speaker's own scatter, not one figure for the run", () => {
