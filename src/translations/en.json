@@ -1928,9 +1928,13 @@
                     "worked_out": "Delays worked out",
                     "finish": "Finish and release the speakers",
                     "check": {
+                        "unindexable": {
+                            "title": "These speakers are too far apart to measure together",
+                            "description": "Their delays span {0} ms, and a speaker can only be placed while it stays inside {1} ms of the others — past that, a late arrival is indistinguishable from an early one on the following chirp, and these readings would rest on the order you walked in rather than on the room. That is the edge of what the measurement can say, and walking differently will not move it. Calibrate a group whose delays sit closer together: leaving out the speaker you know to be slowest, usually one on Bluetooth, is normally enough."
+                        },
                         "irreconcilable": {
                             "title": "These readings could not be reconciled",
-                            "description": "The chirps only fit if this phone's clock were {0} ppm off the server, and no clock is — {1} ppm is already far outside anything real. The recording lost track of which chirp was which, most likely across a long silence between speakers, so nothing measured here can be trusted. Walk it again, keeping the gaps between speakers as short as you can."
+                            "description": "The chirps only fit if this phone's clock were {0} ppm off the server, and no clock is — {1} ppm is already far outside anything real. Either this phone's recording is not what it appears to be, or one speaker sits further behind the others than the chirps can place; nothing measured here can be trusted either way. Open the microphone diagnostics below to rule the phone out, and try again without the speaker you know to be slowest."
                         },
                     "unmeasured": {
                         "title": "One speaker was never heard",

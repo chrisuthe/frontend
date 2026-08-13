@@ -10,9 +10,15 @@
  * with a run is the thing the user is told about.
  */
 
-import { MAX_PLAUSIBLE_RATE_PPM, type LatencyFit } from "./latencyFit";
+import {
+  MAX_OFFSET_SPAN_MS,
+  MAX_PLAUSIBLE_RATE_PPM,
+  type LatencyFit,
+} from "./latencyFit";
 
 export type RunVerdict =
+  /** The speakers are further apart than one chirp train can place them. */
+  | "unindexable"
   /** The arrivals only fit a clock rate no clock could have. */
   | "irreconcilable"
   /** A speaker the run set out to measure was never heard. */
@@ -62,10 +68,17 @@ export const MIN_BRACKET_FRACTION = 0.5;
 
 /** Judge a finished fit against the speakers the run set out to measure. */
 export function runVerdict(fit: LatencyFit, selected: string[]): RunVerdict {
-  // Ahead of everything, because it is not one thing wrong with the run: a rate
-  // this far out means the arrivals were reconciled onto the wrong chirp
-  // somewhere, and every offset that follows from them is meaningless rather
-  // than merely uncertain.
+  // Ahead of everything, because it is not one thing wrong with the run but the
+  // boundary of what the measurement means: past half a chirp period an arrival
+  // could have come from either of two chirps, so every offset here is one
+  // reading of the recording rather than the reading. It also comes ahead of the
+  // rate check, which is the same fault seen at one remove — a misplaced chirp
+  // has to go somewhere, and where it goes is the rate.
+  if (offsetSpanMs(fit) >= MAX_OFFSET_SPAN_MS) return "unindexable";
+
+  // A rate this far out means a chirp was misassigned somewhere the offsets
+  // cannot show it, and every offset that follows from them is meaningless
+  // rather than merely uncertain.
   if (Math.abs(fit.rateErrorPpm) > MAX_PLAUSIBLE_RATE_PPM)
     return "irreconcilable";
 
@@ -94,6 +107,18 @@ export function runVerdict(fit: LatencyFit, selected: string[]): RunVerdict {
 /** Whether a run in this state may have its offsets applied. */
 export function isApplicable(verdict: RunVerdict): boolean {
   return verdict === "pinned" || verdict === "checked";
+}
+
+/**
+ * How far apart the furthest two speakers came out, in milliseconds.
+ *
+ * Taken across every measured speaker including the anchor's zero, because it is
+ * the anchor the others are read against.
+ */
+export function offsetSpanMs(fit: LatencyFit): number {
+  const offsets = Object.values(fit.offsetsMs);
+  if (!offsets.length) return 0;
+  return Math.max(...offsets) - Math.min(...offsets);
 }
 
 /** The widest spread within any single reading, in milliseconds. */

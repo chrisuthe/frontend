@@ -200,6 +200,22 @@ describe("SendspinSyncResults", () => {
     expect(finishButton(wrapper).exists()).toBe(true);
   });
 
+  it("refuses speakers too far apart to place, and shows nothing to apply", () => {
+    const wrapper = mountResults({
+      fit: fitFixture({ offsetsMs: { living: 0, kitchen: 400 } }),
+      trustworthy: false,
+    });
+
+    // Offsets this wide are one reading of the recording rather than the reading,
+    // so they are withheld for the same reason a misassigned run's are, and the
+    // span is named where the advice would otherwise be about the walk.
+    expect(wrapper.text()).toContain(`${BASE}.check.unindexable.title`);
+    expect(wrapper.text()).toContain("400 250");
+    expect(wrapper.findAll("li")).toHaveLength(0);
+    expect(applyButton(wrapper)).toBeUndefined();
+    expect(finishButton(wrapper).exists()).toBe(true);
+  });
+
   it("gives the scatter one speaker at a time, worst first", () => {
     const wrapper = mountResults({
       fit: fitFixture({ scatterMs: { living: 0.04, kitchen: 17.03 } }),
