@@ -2,6 +2,7 @@ import {
   buildReferenceChirp,
   chirpPhase,
   CHIRP_END_HZ,
+  CHIRP_PERIOD_SECONDS,
   CHIRP_SECONDS,
   CHIRP_START_HZ,
 } from "@/helpers/sendspin-sync/chirp";
@@ -34,6 +35,15 @@ function instantaneousHz(progress: number): number {
     (chirpPhase(progress + step) - chirpPhase(progress - step)) / (2 * step);
   return derivative / (2 * Math.PI * CHIRP_SECONDS);
 }
+
+describe("CHIRP_PERIOD_SECONDS", () => {
+  it("is the one second the server emits at", () => {
+    // Pinned rather than derived, because it is agreed with the server's
+    // `sendspin_sync` by hand and nothing at runtime negotiates it. A build that
+    // moves off this alone counts every arrival against the wrong chirp.
+    expect(CHIRP_PERIOD_SECONDS).toBe(1);
+  });
+});
 
 describe("chirpPhase", () => {
   it("matches the server's phase at 48 kHz", () => {

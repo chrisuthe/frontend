@@ -1,4 +1,5 @@
 import SendspinSyncResults from "@/components/sendspin-sync/SendspinSyncResults.vue";
+import { CHIRP_PERIOD_SECONDS } from "@/helpers/sendspin-sync/chirp";
 import type { LatencyFit } from "@/helpers/sendspin-sync/latencyFit";
 import { runVerdict, type CaptureLoss } from "@/helpers/sendspin-sync/verdict";
 import { mount } from "@vue/test-utils";
@@ -41,12 +42,16 @@ function mountResults(
       selected: ["living", "kitchen"],
       fit: fitFixture(),
       loss: CLEAN,
+      spacingSeconds: CHIRP_PERIOD_SECONDS,
       // Derived rather than hand-set, so a test cannot describe a run the verdict
       // helper would never actually produce.
       verdict: runVerdict(
         (props.fit as LatencyFit | undefined) ?? fitFixture(),
         ["living", "kitchen"],
         (props.loss as CaptureLoss | undefined) ?? CLEAN,
+        "spacingSeconds" in props
+          ? (props.spacingSeconds as number | null)
+          : CHIRP_PERIOD_SECONDS,
       ),
       applyResult: null,
       trustworthy: true,
@@ -230,9 +235,26 @@ describe("SendspinSyncResults", () => {
     expect(finishButton(wrapper).exists()).toBe(true);
   });
 
+  it("names a server out of step with this build, and shows nothing to apply", () => {
+    const wrapper = mountResults({
+      spacingSeconds: CHIRP_PERIOD_SECONDS / 2,
+      trustworthy: false,
+    });
+
+    // Both rates, because the reader has to see which two disagree — and no
+    // offsets, since every one of them was counted against the wrong chirp.
+    expect(wrapper.text()).toContain(`${BASE}.check.mismatched.title`);
+    expect(wrapper.text()).toContain(
+      `${BASE}.check.mismatched.description 500 1000`,
+    );
+    expect(wrapper.findAll("li")).toHaveLength(0);
+    expect(applyButton(wrapper)).toBeUndefined();
+    expect(finishButton(wrapper).exists()).toBe(true);
+  });
+
   it("refuses speakers too far apart to place, and shows nothing to apply", () => {
     const wrapper = mountResults({
-      fit: fitFixture({ offsetsMs: { living: 0, kitchen: 400 } }),
+      fit: fitFixture({ offsetsMs: { living: 0, kitchen: 600 } }),
       trustworthy: false,
     });
 
@@ -240,7 +262,7 @@ describe("SendspinSyncResults", () => {
     // so they are withheld for the same reason a misassigned run's are, and the
     // span is named where the advice would otherwise be about the walk.
     expect(wrapper.text()).toContain(`${BASE}.check.unindexable.title`);
-    expect(wrapper.text()).toContain("400 250");
+    expect(wrapper.text()).toContain("600 500");
     expect(wrapper.findAll("li")).toHaveLength(0);
     expect(applyButton(wrapper)).toBeUndefined();
     expect(finishButton(wrapper).exists()).toBe(true);

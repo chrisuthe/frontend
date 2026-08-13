@@ -10,6 +10,7 @@
  * with a run is the thing the user is told about.
  */
 
+import { spacingMatchesPeriod } from "./chirpSpacing";
 import {
   MAX_OFFSET_SPAN_MS,
   MAX_PLAUSIBLE_RATE_PPM,
@@ -17,6 +18,8 @@ import {
 } from "./latencyFit";
 
 export type RunVerdict =
+  /** The chirps did not arrive at the rate this build is built to expect. */
+  | "mismatched"
   /** The phone's recording had too much missing from it to read. */
   | "lossy"
   /** The speakers are further apart than one chirp train can place them. */
@@ -74,13 +77,13 @@ export const MIN_BRACKET_FRACTION = 0.5;
  *
  * Every hole the capture can see is measured against the render clock and keeps
  * its true length, so the timeline itself survives a lossy stretch; what does not
- * survive is the audio. A chirp is 60 ms of a 500 ms period, so about an eighth
- * of a lost quantum's chances fall inside one, and a five and a half second
- * recording holds eleven chirps. At one per cent — some 55 ms, or twenty render
- * quanta — two or three chirps expect to be nicked and the rest come through
- * clean, which the outlier pass is there for. Past it a whole chirp can go
- * missing and the survivors are being read out of a recording with holes in them,
- * where nothing downstream can tell the room from the gaps.
+ * survive is the audio. A chirp is 60 ms of a one second period, so about a
+ * sixteenth of a lost quantum's chances fall inside one, and an eight second
+ * recording holds eight chirps. At one per cent — some 80 ms, or thirty render
+ * quanta — two chirps expect to be nicked and the rest come through clean, which
+ * the outlier pass is there for. Past it a whole chirp can go missing and the
+ * survivors are being read out of a recording with holes in them, where nothing
+ * downstream can tell the room from the gaps.
  *
  * Loss between speakers is not counted and costs nothing: the clock accounts for
  * it and no chirp was being listened for. This is about the recordings only.
@@ -95,16 +98,33 @@ export interface CaptureLoss {
   worstFraction: number;
 }
 
-/** Judge a finished fit against the speakers the run set out to measure. */
+/**
+ * Judge a finished fit against the speakers the run set out to measure.
+ *
+ * `spacingSeconds` is the chirp spacing the run's recordings actually showed, or
+ * `null` when none of them could read one — which is not the same as agreeing
+ * with this build and must not be judged as disagreeing with it either.
+ */
 export function runVerdict(
   fit: LatencyFit,
   selected: string[],
   loss: CaptureLoss,
+  spacingSeconds: number | null,
 ): RunVerdict {
-  // First of all, because it is about the recording rather than about anything
-  // the recording was of. A run this lossy will usually also read as scattered or
-  // as speakers that cannot be placed, and every one of those would send the user
-  // to the speakers or to how they walked — when what needs fixing is the phone.
+  // First of all, because the fault is not in this run but in the instrument that
+  // took it: while the two sides disagree about the chirp rate there is no
+  // measurement to be had at all, from this walk or from any other. Every verdict
+  // below would send the reader to the phone, the speakers or the walk, and none
+  // of those is at fault. The spacing is read off the whole chirp train's
+  // repetition rather than off any one arrival, so a recording with the odd hole in
+  // it still reports it faithfully.
+  if (spacingSeconds !== null && !spacingMatchesPeriod(spacingSeconds))
+    return "mismatched";
+
+  // Then the recording, ahead of anything the recording was of. A run this lossy
+  // will usually also read as scattered or as speakers that cannot be placed, and
+  // every one of those would send the user to the speakers or to how they walked —
+  // when what needs fixing is the phone.
   if (loss.worstFraction > MAX_LOST_FRACTION) return "lossy";
 
   // Ahead of the rest, because it is not one thing wrong with the run but the

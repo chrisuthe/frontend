@@ -12,8 +12,16 @@
  * server's 48 kHz.
  */
 
-/** Seconds between the start of one chirp and the next. */
-export const CHIRP_PERIOD_SECONDS = 0.5;
+/**
+ * Seconds between the start of one chirp and the next.
+ *
+ * Shared with the server by hand rather than negotiated, and half of it is the
+ * window within which two speakers can be told apart — so it is the one constant
+ * here that both sides have to be rebuilt together to change. A recording whose
+ * chirps show a different spacing is refused rather than measured, which
+ * `chirpSpacing.ts` is there to notice.
+ */
+export const CHIRP_PERIOD_SECONDS = 1;
 
 /** Length of the sweep itself. */
 export const CHIRP_SECONDS = 0.06;

@@ -1930,6 +1930,10 @@
                     "worked_out": "Delays worked out",
                     "finish": "Finish and release the speakers",
                     "check": {
+                        "mismatched": {
+                            "title": "This app and the server disagree about the chirps",
+                            "description": "The chirps arrived every {0} ms, and this app is built to expect one every {1} ms. Every arrival is counted against the rate it expects, so nothing measured here means anything — and nothing here is a fault of the speakers, of this phone, or of the way you walked. The two sides set the chirp rate between them, so they have to be updated together: bring the server and this app to matching versions, then walk it again."
+                        },
                         "lossy": {
                             "title": "This phone's recording had gaps in it",
                             "description": "{0}% of one reading never reached the browser, more than the {1}% its chirps can be read through. This is about the recording and nothing else — the speakers are fine, and so is the way you walked. There is no need to hurry between speakers; the time spent walking costs the measurement nothing. A phone drops audio when it is busy elsewhere, so close other apps, leave the screen on, keep this tab in front of you for the whole walk, and measure again."

@@ -69,25 +69,29 @@ const ORIGIN_FRAME = 62_881;
 /**
  * How many render quanta the audio thread misses on the long leg.
  *
- * 128 of them is 341 ms, and what matters is that it clears half a chirp period.
+ * 256 of them is 683 ms, and what matters is that it clears half a chirp period.
  * Below that the chirp numbering rounds back to the right answer on its own and
  * a compressed timeline shows up only as scatter; above it a whole burst lands on
- * the wrong chirp, which is the failure being reproduced. 200 ms of stall is
- * already enough to do this where a walk's own geometry leaves the rounding near
- * its edge, and this fixture puts it past the edge outright.
+ * the wrong chirp, which is the failure being reproduced. A one second period
+ * takes twice the stall the old half-second one did to get there — the same run
+ * on a phone stalling 341 ms would now survive it — so the fixture stalls twice as
+ * long to stay past the edge.
  */
-const STALL_QUANTA = 128;
+const STALL_QUANTA = 256;
+
+/** As long as the run records for one speaker, so a leg holds seven chirps. */
+const ARMED_SECONDS = 7 * CHIRP_PERIOD_SECONDS;
 
 /** The walk: three speakers, the anchor measured again at the end. */
 const LEGS: { playerId?: string; seconds: number; stalls?: boolean }[] = [
   { seconds: 1 },
-  { playerId: "living", seconds: 3.5 },
+  { playerId: "living", seconds: ARMED_SECONDS },
   { seconds: 12, stalls: true },
-  { playerId: "kitchen", seconds: 3.5 },
+  { playerId: "kitchen", seconds: ARMED_SECONDS },
   { seconds: 6 },
-  { playerId: "study", seconds: 3.5 },
+  { playerId: "study", seconds: ARMED_SECONDS },
   { seconds: 6 },
-  { playerId: "living", seconds: 3.5 },
+  { playerId: "living", seconds: ARMED_SECONDS },
 ];
 
 interface Processor {
@@ -148,7 +152,9 @@ describe("a walk that dropped frames", () => {
     expect(fit.residualMs).toBeLessThan(0.1);
 
     // And the run is offered for applying, which is the whole point of it.
-    expect(isApplicable(runVerdict(fit, SELECTED, clean()))).toBe(true);
+    expect(
+      isApplicable(runVerdict(fit, SELECTED, clean(), CHIRP_PERIOD_SECONDS)),
+    ).toBe(true);
   });
 
   it("counts the stall against nothing, because it fell between speakers", () => {
@@ -165,7 +171,7 @@ describe("a walk that dropped frames", () => {
 
   it("is wrong when the same batches are numbered by frames delivered", () => {
     // What the capture did before: a tally that never sees a quantum it was not
-    // called for, so every recording after the stall is numbered 341 ms early and
+    // called for, so every recording after the stall is numbered 683 ms early and
     // the burst inside it lands on the chirp before its own.
     const fit = fitWalk(
       walk,
@@ -177,7 +183,9 @@ describe("a walk that dropped frames", () => {
     // well as into the rate — this is the "13-15 ms of scatter" run, where every
     // speaker came back wrong by far more than the millisecond being measured.
     expect(Math.abs(fit.offsetsMs.kitchen - 12)).toBeGreaterThan(50);
-    expect(isApplicable(runVerdict(fit, SELECTED, clean()))).toBe(false);
+    expect(
+      isApplicable(runVerdict(fit, SELECTED, clean(), CHIRP_PERIOD_SECONDS)),
+    ).toBe(false);
   });
 });
 
@@ -260,6 +268,9 @@ function fitWalk(
     // Enough chirps for the visit to be placed by its own median rather than by
     // whichever arrival happened to be found first.
     expect(scan.arrivals.length).toBeGreaterThanOrEqual(5);
+    // And this server is the one this build expects, so the walk is judged on the
+    // numbering rather than refused for a rate it does not share.
+    expect(scan.spacingSeconds!).toBeCloseTo(CHIRP_PERIOD_SECONDS, 2);
 
     return scan.arrivals.map((arrival) => ({
       visit: index,
@@ -293,7 +304,7 @@ function heard(frame: number, playerId: string): number {
   const chirp = Math.floor((frame - first) / spacing);
 
   let value = noise(frame);
-  // A chirp is an eighth of a period long, so at most one of these overlaps.
+  // A chirp is a sixteenth of a period long, so at most one of these overlaps.
   for (const index of [chirp, chirp + 1]) {
     const progress = (frame - (first + index * spacing)) / CHIRP_FRAMES;
     if (progress < 0 || progress >= 1) continue;
@@ -303,8 +314,15 @@ function heard(frame: number, playerId: string): number {
   return value;
 }
 
-/** Room noise, keyed on the frame so it does not depend on how it is chopped up. */
+/**
+ * Room noise, keyed on the frame so it does not depend on how it is chopped up.
+ *
+ * Hashed rather than scaled: the spacing measurement reads how much a recording
+ * repeats, and a value that is merely a linear function of the frame repeats.
+ */
 function noise(frame: number): number {
-  const state = (frame * 1103515245 + 12345) % 2147483648;
-  return (state / 2147483648 - 0.5) * 0.01;
+  let state = Math.imul(frame + 1, 1103515245) + 12345;
+  state = Math.imul(state ^ (state >>> 15), 2246822519);
+  state = (state ^ (state >>> 13)) >>> 0;
+  return (state / 4294967296 - 0.5) * 0.01;
 }

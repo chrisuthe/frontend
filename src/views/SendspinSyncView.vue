@@ -80,6 +80,7 @@
           :selected="selected"
           :fit="fit"
           :loss="loss"
+          :spacing-seconds="spacingSeconds"
           :verdict="verdict"
           :apply-result="applyResult"
           :trustworthy="trustworthy"
@@ -147,6 +148,7 @@ const {
   remaining,
   fit,
   loss,
+  spacingSeconds,
   verdict,
   trustworthy,
   applyResult,

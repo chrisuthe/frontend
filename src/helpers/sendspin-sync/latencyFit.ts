@@ -41,9 +41,9 @@
  * chirp train has nothing to say about which side of it a speaker sits on.
  *
  * A fold that lands instead on the speaker the run is anchored to, whose offset is
- * fixed at zero, has nowhere to go but the clock rate: half a period smeared
+ * fixed at zero, has nowhere to go but the clock rate: a whole period smeared
  * across the run. {@link MAX_PLAUSIBLE_RATE_PPM} refuses that while the run is
- * short enough for the figure to be absurd, which is about four minutes; on a
+ * short enough for the figure to be absurd, which is about eight minutes; on a
  * longer walk the same fold implies a rate a merely poor clock could also have and
  * the two stop being separable. Neither refusal has anything to say about how the
  * walk was paced.
@@ -168,11 +168,11 @@ const MIN_SAMPLES_TO_JUDGE = 5;
  * line past which a rate stops being a reading has to sit above what the rest of
  * the flow tolerates. Twice that, and twenty times a healthy clock, refuses
  * nothing real while still catching a fit that has swallowed a whole chirp
- * period: half a second misassigned across a two-and-a-half-minute walk implies
- * some 3300 ppm.
+ * period: one second misassigned across a two-and-a-half-minute walk implies some
+ * 6600 ppm.
  *
- * That figure is half a second divided by the run, so it falls as the walk gets
- * longer and crosses this line at about four minutes. Past that length a
+ * That figure is one second divided by the run, so it falls as the walk gets
+ * longer and crosses this line at about eight minutes. Past that length a
  * swallowed period is no longer absurd on its face, and this stops being able to
  * catch one.
  */
@@ -253,7 +253,7 @@ interface FitRow {
  * between the widest pair seen in testing — the arrival detector's own bias, up to
  * 25 ms per visit against the grid it anchors on, and the drift across the silence
  * itself. Only drift grows with the walk, and on a healthy clock it is nothing:
- * 6 ms per minute of silence at 100 ppm, against a 250 ms budget. So there is
+ * 6 ms per minute of silence at 100 ppm, against a 500 ms budget. So there is
  * nothing here to choose between, which is why no search follows. The exception is
  * a clock as bad as the 1000 ppm the microphone probe still admits, where a silence
  * spends 60 ms a minute and a long enough one could reach the budget on its own.
@@ -262,7 +262,7 @@ interface FitRow {
  * arrival is what keeps that budget per silence. Measured against one fixed
  * arrival the drift accumulates instead, and a phone 1000 ppm out — which the
  * microphone probe still calls merely degraded — spends the whole budget on drift
- * alone after four minutes of walking.
+ * alone after eight minutes of walking.
  *
  * A visit is placed by the median of its arrivals rather than by its first, so a
  * reflection heard in place of the direct sound cannot shift every chirp number
