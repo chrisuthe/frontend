@@ -4,6 +4,7 @@ import {
   ConfigEntryType,
   EventType,
   ProviderStatus,
+  ProviderType,
   type ProviderConfig,
 } from "@/plugins/api/interfaces";
 import type { MusicAssistantApi } from "@/plugins/api";
@@ -18,6 +19,15 @@ const { apiMock, eventbusMock, routerMock, toastMock, unsubscribeMock } =
       invokeProviderConfigAction:
         vi.fn<MusicAssistantApi["invokeProviderConfigAction"]>(),
       providerManifests: {
+        sendspin_sync: {
+          allow_disable: true,
+          codeowners: [],
+          credits: [],
+          description: "Sendspin Sync plugin",
+          documentation: "",
+          has_setup_flow: false,
+          name: "Sendspin Sync",
+        },
         spotify: {
           allow_disable: true,
           codeowners: [],
@@ -46,6 +56,8 @@ const { apiMock, eventbusMock, routerMock, toastMock, unsubscribeMock } =
     },
     unsubscribeMock: vi.fn(),
   }));
+
+const storeMock = vi.hoisted(() => ({ enabledPlugins: new Set<string>() }));
 
 let providersUpdated: (() => void) | undefined;
 
@@ -87,6 +99,10 @@ vi.mock("@/plugins/i18n", () => ({
   $t: (key: string) => key,
 }));
 
+vi.mock("@/plugins/store", () => ({
+  store: storeMock,
+}));
+
 vi.mock("vue-sonner", () => ({
   toast: toastMock,
 }));
@@ -112,6 +128,7 @@ vi.mock("vue-router", async (importOriginal) => {
 beforeEach(() => {
   vi.clearAllMocks();
   providersUpdated = undefined;
+  storeMock.enabledPlugins = new Set<string>();
   apiMock.providerManifests.spotify.allow_disable = true;
   apiMock.providerManifests.spotify.documentation =
     "https://example.com/spotify";
@@ -167,6 +184,88 @@ describe("EditProvider", () => {
       rel: "noopener noreferrer",
       target: "_blank",
     });
+  });
+
+  it("routes to the calibration page from the Sendspin Sync provider", async () => {
+    storeMock.enabledPlugins.add("sendspin_sync");
+    apiMock.getProviderConfig.mockResolvedValue(sendspinSyncConfig());
+
+    const wrapper = shallowMount(EditProvider, {
+      props: {
+        instanceId: "sendspin_sync--1",
+      },
+      global: {
+        mocks: {
+          $t: (key: string) => key,
+        },
+        stubs: providerDetailsStubs,
+      },
+    });
+    await flushPromises();
+
+    const calibrate = wrapper.get(
+      '[data-testid="provider-sendspin-sync-calibrate"]',
+    );
+    // In-app navigation: a router push, never an anchor opening a new tab.
+    expect(calibrate.attributes("href")).toBeUndefined();
+    expect(calibrate.attributes("target")).toBeUndefined();
+
+    await calibrate.trigger("click");
+
+    expect(routerMock.push).toHaveBeenCalledWith({ name: "sendspin-sync" });
+  });
+
+  it("hides the calibration link while the Sendspin Sync plugin is not enabled", async () => {
+    // The route guard bounces to discover unless the plugin is enabled, so the
+    // link stays hidden even though this is the Sendspin Sync provider.
+    apiMock.getProviderConfig.mockResolvedValue(sendspinSyncConfig());
+
+    const wrapper = shallowMount(EditProvider, {
+      props: {
+        instanceId: "sendspin_sync--1",
+      },
+      global: {
+        mocks: {
+          $t: (key: string) => key,
+        },
+        stubs: providerDetailsStubs,
+      },
+    });
+    await flushPromises();
+
+    expect(
+      wrapper.find('[data-testid="provider-sendspin-sync-calibrate"]').exists(),
+    ).toBe(false);
+  });
+
+  it("leaves other providers without a calibration link", async () => {
+    storeMock.enabledPlugins.add("sendspin_sync");
+    apiMock.getProviderConfig.mockResolvedValue(
+      spotifyConfig(ProviderStatus.LOADED),
+    );
+
+    const wrapper = shallowMount(EditProvider, {
+      props: {
+        instanceId: "spotify--test",
+      },
+      global: {
+        mocks: {
+          $t: (key: string) => key,
+        },
+        stubs: providerDetailsStubs,
+      },
+    });
+    await flushPromises();
+
+    expect(
+      wrapper.find('[data-testid="provider-sendspin-sync-calibrate"]').exists(),
+    ).toBe(false);
+    expect(
+      wrapper.find('[data-testid="provider-documentation"]').exists(),
+    ).toBe(true);
+    expect(wrapper.find('[data-testid="provider-known-issues"]').exists()).toBe(
+      true,
+    );
   });
 
   it("hides reconfiguration when the provider has no setup flow", async () => {
@@ -829,6 +928,18 @@ describe("EditProvider", () => {
     expect(toastMock.success).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * The Sendspin Sync plugin's provider config, loaded and enabled.
+ */
+function sendspinSyncConfig(): ProviderConfig {
+  return providerConfig({
+    domain: "sendspin_sync",
+    instance_id: "sendspin_sync--1",
+    status: ProviderStatus.LOADED,
+    type: ProviderType.PLUGIN,
+  });
+}
 
 /**
  * The spotify provider config these tests load, with a single `account` entry.
