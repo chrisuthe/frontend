@@ -1853,7 +1853,7 @@
         "sendspin_sync": {
             "title": "Sendspin Sync",
             "calibration": {
-                "subtitle": "Walk to each speaker with this phone. It listens for a calibration chirp and works out how far behind each speaker is, then evens them out.",
+                "subtitle": "Walk to each speaker with this phone. It listens for a calibration chirp and works out how far apart their timing is, then evens them out.",
                 "diagnostics": "Microphone diagnostics",
                 "toast": {
                     "started": "Calibration started. Walk to your first speaker.",
@@ -1913,7 +1913,7 @@
                 },
                 "results": {
                     "title": "What the walk measured",
-                    "description": "How far behind each speaker is, relative to the first one you measured. Applying this delays the others so they all line up with the slowest.",
+                    "description": "How each speaker's timing compares with the first one you measured. Applying this brings the others into line with whichever speaker is already earliest.",
                     "milliseconds": "{0} ms",
                     "unheard": "not heard",
                     "applied_delay": "(delay set to {0} ms)",
