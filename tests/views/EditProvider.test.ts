@@ -59,6 +59,8 @@ const { apiMock, eventbusMock, routerMock, toastMock, unsubscribeMock } =
 
 const storeMock = vi.hoisted(() => ({ enabledPlugins: new Set<string>() }));
 
+const authMock = vi.hoisted(() => ({ isAdmin: vi.fn(() => true) }));
+
 let providersUpdated: (() => void) | undefined;
 
 const SlotStub = {
@@ -103,6 +105,10 @@ vi.mock("@/plugins/store", () => ({
   store: storeMock,
 }));
 
+vi.mock("@/plugins/auth", () => ({
+  authManager: authMock,
+}));
+
 vi.mock("vue-sonner", () => ({
   toast: toastMock,
 }));
@@ -129,6 +135,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   providersUpdated = undefined;
   storeMock.enabledPlugins = new Set<string>();
+  authMock.isAdmin.mockReturnValue(true);
   apiMock.providerManifests.spotify.allow_disable = true;
   apiMock.providerManifests.spotify.documentation =
     "https://example.com/spotify";
@@ -218,6 +225,32 @@ describe("EditProvider", () => {
   it("hides the calibration link while the Sendspin Sync plugin is not enabled", async () => {
     // The route guard bounces to discover unless the plugin is enabled, so the
     // link stays hidden even though this is the Sendspin Sync provider.
+    apiMock.getProviderConfig.mockResolvedValue(sendspinSyncConfig());
+
+    const wrapper = shallowMount(EditProvider, {
+      props: {
+        instanceId: "sendspin_sync--1",
+      },
+      global: {
+        mocks: {
+          $t: (key: string) => key,
+        },
+        stubs: providerDetailsStubs,
+      },
+    });
+    await flushPromises();
+
+    expect(
+      wrapper.find('[data-testid="provider-sendspin-sync-calibrate"]').exists(),
+    ).toBe(false);
+  });
+
+  it("hides the calibration link from a non-admin", async () => {
+    // Calibration takes the speakers over and writes their delays, which the
+    // server refuses below admin scope — so the route guard turns a non-admin
+    // away and this link must not lead them there.
+    storeMock.enabledPlugins.add("sendspin_sync");
+    authMock.isAdmin.mockReturnValue(false);
     apiMock.getProviderConfig.mockResolvedValue(sendspinSyncConfig());
 
     const wrapper = shallowMount(EditProvider, {

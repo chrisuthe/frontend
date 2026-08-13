@@ -2011,7 +2011,8 @@
                 }
             },
             "toast": {
-                "unavailable": "Sendspin Sync is not enabled on this server."
+                "unavailable": "Sendspin Sync is not enabled on this server.",
+                "admin_only": "Speaker calibration is an administrator tool. Ask an administrator to run it."
             },
             "probe": {
                 "subtitle": "Check whether this phone can hear a calibration chirp accurately enough to sync your speakers.",

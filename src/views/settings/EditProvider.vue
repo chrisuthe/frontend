@@ -340,6 +340,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import { toast } from "vue-sonner";
+import { authManager } from "@/plugins/auth";
 import AdvancedSettingsToggle from "./AdvancedSettingsToggle.vue";
 import EditConfig from "./EditConfig.vue";
 
@@ -417,11 +418,14 @@ const documentationUrl = computed(() => {
 });
 
 // Mirrors the sendspin-sync route guard, so the link is only offered when
-// following it actually reaches the calibration page.
+// following it actually reaches the calibration page. The admin check is part
+// of that: calibration takes every selected speaker over and then writes each
+// one's delay, which the server refuses below admin scope.
 const canCalibrateSendspinSync = computed(
   () =>
     config.value?.domain === SENDSPIN_SYNC_DOMAIN &&
-    store.enabledPlugins.has(SENDSPIN_SYNC_DOMAIN),
+    store.enabledPlugins.has(SENDSPIN_SYNC_DOMAIN) &&
+    authManager.isAdmin(),
 );
 
 // watchers
