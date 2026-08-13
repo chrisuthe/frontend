@@ -1,5 +1,6 @@
 import SendspinSyncWalk from "@/components/sendspin-sync/SendspinSyncWalk.vue";
 import type { Measurement } from "@/composables/sendspin-sync/useCalibrationRun";
+import { CHIRP_PERIOD_SECONDS } from "@/helpers/sendspin-sync/chirp";
 import { mount } from "@vue/test-utils";
 import { describe, expect, it } from "vitest";
 
@@ -12,11 +13,12 @@ function reading(overrides: Partial<Measurement> = {}): Measurement {
   return {
     visit: 0,
     playerId: "living",
-    found: 10,
-    expected: 10,
+    found: 7,
+    expected: 7,
     medianSnr: 40,
     dropouts: 0,
     lostFraction: 0,
+    spacingSeconds: CHIRP_PERIOD_SECONDS,
     ...overrides,
   };
 }
@@ -92,8 +94,8 @@ describe("SendspinSyncWalk", () => {
   it("shows how many chirps each speaker gave up, and how good they were", () => {
     const wrapper = mountWalk({
       visits: [
-        reading({ found: 10, expected: 10, medianSnr: 40 }),
-        reading({ visit: 1, playerId: "kitchen", found: 4, expected: 10 }),
+        reading({ found: 7, expected: 7, medianSnr: 40 }),
+        reading({ visit: 1, playerId: "kitchen", found: 3, expected: 7 }),
       ],
     });
 
@@ -112,8 +114,8 @@ describe("SendspinSyncWalk", () => {
   it("shows the most recent reading of a speaker measured twice", () => {
     const wrapper = mountWalk({
       visits: [
-        reading({ found: 10, medianSnr: 40 }),
-        reading({ visit: 2, found: 2, expected: 10, medianSnr: 40 }),
+        reading({ found: 7, medianSnr: 40 }),
+        reading({ visit: 2, found: 1, expected: 7, medianSnr: 40 }),
       ],
     });
 

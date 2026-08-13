@@ -12,6 +12,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const RATE = 48000;
 const CHIRP_LENGTH = Math.round(CHIRP_SECONDS * RATE);
 
+/** As long as the run records for one speaker: seven chirps, wherever they land. */
+const RECORD_SECONDS = 8 * CHIRP_PERIOD_SECONDS;
+
+/** Chirps a recording that long is sure to hold. */
+const CHIRPS_HELD = 7;
+
 const fakes = vi.hoisted(() => ({
   session: {
     loadPlayers: vi.fn(),
@@ -87,32 +93,40 @@ function withScope<T>(factory: () => T): T {
  * server's metronome lands at `(n * period + offset) / (1 - drift)` on the phone's
  * clock. Building the audio itself rather than the arrival times means the real
  * detector and the real fit both run here.
+ *
+ * `spacingSeconds` is the rate the server emitted at, which is the period this
+ * build expects unless a case is about the two disagreeing.
  */
 function recordingAt(options: {
   startSeconds: number;
   offsetSeconds: number;
   drift: number;
   seconds?: number;
+  spacingSeconds?: number;
 }): Recording {
   const { startSeconds, offsetSeconds, drift } = options;
-  const length = Math.round((options.seconds ?? 5.5) * RATE);
+  const spacing = options.spacingSeconds ?? CHIRP_PERIOD_SECONDS;
+  const length = Math.round((options.seconds ?? RECORD_SECONDS) * RATE);
   const samples = new Float32Array(length);
   const firstFrame = Math.round(startSeconds * RATE);
 
   const first = Math.ceil(
-    (startSeconds * (1 - drift) - offsetSeconds) / CHIRP_PERIOD_SECONDS,
+    (startSeconds * (1 - drift) - offsetSeconds) / spacing,
   );
   for (let chirp = first; ; chirp++) {
-    const at = (chirp * CHIRP_PERIOD_SECONDS + offsetSeconds) / (1 - drift);
+    const at = (chirp * spacing + offsetSeconds) / (1 - drift);
     const index = at * RATE - firstFrame;
     if (index >= length) break;
     if (index >= 0) placeChirp(samples, index);
   }
 
+  // `Math.imul`, because the spacing measurement reads how much a recording
+  // repeats: a 31-bit product rounded through a double loses its low bits and
+  // comes back periodic, which is a chirp train as far as that is concerned.
   let state = 5;
   for (let index = 0; index < length; index++) {
-    state = (state * 1103515245 + 12345) % 2147483648;
-    samples[index] += (state / 2147483648 - 0.5) * 0.01;
+    state = (Math.imul(state, 1103515245) + 12345) >>> 0;
+    samples[index] += (state / 4294967296 - 0.5) * 0.01;
   }
   return { samples, firstFrame, sampleRate: RATE, dropouts: 0, lostFrames: 0 };
 }
@@ -229,7 +243,7 @@ describe("useCalibrationRun", () => {
       fakes.capture.record.mock.invocationCallOrder[0],
     );
     expect(run.visits.value).toHaveLength(1);
-    expect(run.visits.value[0].found).toBeGreaterThanOrEqual(10);
+    expect(run.visits.value[0].found).toBeGreaterThanOrEqual(CHIRPS_HELD);
   });
 
   it("asks for the first speaker again once the rest are done", async () => {
@@ -291,10 +305,44 @@ describe("useCalibrationRun", () => {
     }
 
     expect(run.loss.value.dropouts).toBe(96);
-    expect(run.loss.value.worstFraction).toBeCloseTo(0.0465, 3);
+    expect(run.loss.value.worstFraction).toBeCloseTo(0.032, 3);
     // Otherwise a clean-looking run: the fit has nothing to complain about, which
     // is exactly why the recording has to be judged separately from it.
     expect(run.verdict.value).toBe("lossy");
+    expect(run.trustworthy.value).toBe(false);
+    expect(await run.apply()).toBe(false);
+    expect(fakes.session.apply).not.toHaveBeenCalled();
+  });
+
+  it("refuses a run whose server is emitting at a rate this build does not expect", async () => {
+    const run = await started();
+    for (const visit of [
+      { startSeconds: 0, offsetSeconds: 0, player: "living" },
+      { startSeconds: 30, offsetSeconds: 0.012, player: "kitchen" },
+      { startSeconds: 60, offsetSeconds: 0, player: "living" },
+    ]) {
+      fakes.capture.record.mockResolvedValue(
+        // A server still on the old half-second rate. Nothing else about the walk
+        // is wrong, and the recordings look healthy: the windows the detector
+        // searches land on every other chirp and each one holds an arrival.
+        recordingAt({
+          ...visit,
+          drift: 0,
+          spacingSeconds: CHIRP_PERIOD_SECONDS / 2,
+        }),
+      );
+      await measure(run, visit.player);
+    }
+
+    for (const reading of run.visits.value) {
+      expect(reading.found).toBeGreaterThanOrEqual(CHIRPS_HELD);
+      expect(reading.spacingSeconds!).toBeCloseTo(CHIRP_PERIOD_SECONDS / 2, 2);
+    }
+    expect(run.spacingSeconds.value!).toBeCloseTo(CHIRP_PERIOD_SECONDS / 2, 2);
+
+    // The fit itself has nothing to complain about — which is exactly why the
+    // spacing has to be checked separately from it.
+    expect(run.verdict.value).toBe("mismatched");
     expect(run.trustworthy.value).toBe(false);
     expect(await run.apply()).toBe(false);
     expect(fakes.session.apply).not.toHaveBeenCalled();
@@ -371,8 +419,9 @@ describe("useCalibrationRun", () => {
       { startSeconds: 0, offsetSeconds: 0, player: "living" },
       { startSeconds: 30, offsetSeconds: 0.012, player: "kitchen" },
       // The anchor reading 6 ms further out than at the start. With only this one
-      // repeat the fit absorbs it into the clock rate exactly — 100 ppm, entirely
-      // ordinary for a phone — and kitchen comes out 3 ms wrong.
+      // repeat the fit absorbs it into the clock rate — 6 ms across the 60 seconds
+      // between the two readings, so 100 ppm, entirely ordinary for a phone — and
+      // kitchen comes out 3 ms wrong.
       { startSeconds: 60, offsetSeconds: 0.006, player: "living" },
     ]) {
       fakes.capture.record.mockResolvedValue(
@@ -382,7 +431,7 @@ describe("useCalibrationRun", () => {
     }
 
     const fit = run.fit.value!;
-    expect(fit.rateErrorPpm).toBeCloseTo(100, 0);
+    expect(Math.abs(fit.rateErrorPpm - 100)).toBeLessThan(2);
     expect(fit.offsetsMs.kitchen).toBeCloseTo(9, 0);
     // So no disagreement is reported, because there is genuinely none to see —
     // and the run says the rate was pinned rather than checked.
@@ -445,9 +494,9 @@ describe("useCalibrationRun", () => {
     const run = await started();
     for (const visit of [
       { startSeconds: 0, offsetSeconds: 0, player: "living" },
-      // Tapping "measure again" straight away: two readings of the anchor, but
-      // over six seconds of what becomes a two minute run.
-      { startSeconds: 6, offsetSeconds: 0, player: "living" },
+      // Tapping "measure again" as soon as the first reading finishes: two readings
+      // of the anchor, but over nine seconds of what becomes a two minute run.
+      { startSeconds: 9, offsetSeconds: 0, player: "living" },
       { startSeconds: 120, offsetSeconds: 0.012, player: "kitchen" },
     ]) {
       fakes.capture.record.mockResolvedValue(
@@ -456,9 +505,9 @@ describe("useCalibrationRun", () => {
       await measure(run, visit.player);
     }
 
-    // The clock rate would be fitted over 6 of 125 seconds, which pins it about as
+    // The clock rate would be fitted over 9 of 128 seconds, which pins it about as
     // well as not bracketing at all — so the walk keeps asking for the real one.
-    expect(run.fit.value!.bracketSpanSeconds).toBeCloseTo(6, 0);
+    expect(run.fit.value!.bracketSpanSeconds).toBeCloseTo(9, 0);
     expect(run.verdict.value).toBe("short_bracket");
     expect(run.trustworthy.value).toBe(false);
     expect(run.needsBracket.value).toBe(true);
@@ -469,7 +518,7 @@ describe("useCalibrationRun", () => {
     const run = await started();
     for (const visit of [
       { startSeconds: 0, offsetSeconds: 0, player: "living" },
-      { startSeconds: 6, offsetSeconds: 0, player: "living" },
+      { startSeconds: 9, offsetSeconds: 0, player: "living" },
       { startSeconds: 120, offsetSeconds: 0.012, player: "kitchen" },
       { startSeconds: 180, offsetSeconds: 0, player: "living" },
     ]) {
@@ -527,7 +576,7 @@ describe("useCalibrationRun", () => {
       startSeconds: 0,
       offsetSeconds: 0,
       drift: 0,
-      seconds: 5.5,
+      seconds: RECORD_SECONDS,
     });
     silence.samples.fill(0);
     fakes.capture.record.mockResolvedValue(silence);

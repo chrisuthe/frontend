@@ -40,8 +40,19 @@ import { computed, ref, watch } from "vue";
 import { useCalibrationSession } from "./useCalibrationSession";
 import { useChirpCapture } from "./useChirpCapture";
 
-/** Chirps collected per speaker. */
-const CHIRPS_PER_VISIT = 10;
+/**
+ * Chirps collected per speaker.
+ *
+ * Every one of them costs a second of standing still, so this is as few as the
+ * rest of the flow can work with rather than as many as would fit. Two things set
+ * the floor, and neither is precision — a clean visit's arrivals agree to a
+ * hundredth of a millisecond, which is a hundred times finer than the run is
+ * judged by. What needs funding is the outlier pass that throws away a reflection
+ * heard in place of the direct sound: it wants five arrivals before it will judge
+ * a visit at all, and a recording at the edge of the loss the verdict admits
+ * expects to have two of them nicked by holes. Seven leaves exactly that margin.
+ */
+const CHIRPS_PER_VISIT = 7;
 
 /**
  * How long to wait after soloing before recording.
@@ -68,6 +79,8 @@ export interface Measurement {
   dropouts: number;
   /** The share of this recording those quanta cover, 0 to 1. */
   lostFraction: number;
+  /** The chirp spacing this recording showed, or `null` when it could not say. */
+  spacingSeconds: number | null;
 }
 
 export type RunPhase = "picking" | "walking" | "measuring" | "voided";
@@ -131,9 +144,27 @@ export function useCalibrationRun() {
     ),
   }));
 
+  /**
+   * The chirp spacing the run's recordings showed, or `null` while none could
+   * read one.
+   *
+   * The middle reading rather than the worst of them: the server's rate is the
+   * same for every recording, so a genuine mismatch shows in all of them, and
+   * taking the extreme would let one poorly heard speaker accuse the build.
+   */
+  const spacingSeconds = computed<number | null>(() => {
+    const readings = visits.value
+      .map((visit) => visit.spacingSeconds)
+      .filter((spacing): spacing is number => spacing !== null)
+      .sort((left, right) => left - right);
+    return readings.length ? readings[readings.length >> 1] : null;
+  });
+
   /** What this run can honestly say about itself, or `null` before it can. */
   const verdict = computed(() =>
-    fit.value ? runVerdict(fit.value, selected.value, loss.value) : null,
+    fit.value
+      ? runVerdict(fit.value, selected.value, loss.value, spacingSeconds.value)
+      : null,
   );
 
   /** Whether the offsets may be applied. */
@@ -215,6 +246,7 @@ export function useCalibrationRun() {
           lostFraction: recording.samples.length
             ? recording.lostFrames / recording.samples.length
             : 0,
+          spacingSeconds: scan.spacingSeconds,
         },
       ];
       return scan.arrivals.length > 0;
@@ -292,6 +324,7 @@ export function useCalibrationRun() {
     needsBracket,
     fit,
     loss,
+    spacingSeconds,
     verdict,
     trustworthy,
     applyResult,

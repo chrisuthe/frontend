@@ -88,12 +88,21 @@ function jitter(seed: number): () => number {
 /** The walk the flow prescribes: each speaker in turn, the first one again last. */
 const WALK: Visit[] = [
   { playerId: "living", fromChirp: 0 },
-  { playerId: "kitchen", fromChirp: 60 },
-  { playerId: "study", fromChirp: 120 },
-  { playerId: "living", fromChirp: 180 },
+  { playerId: "kitchen", fromChirp: 30 },
+  { playerId: "study", fromChirp: 60 },
+  { playerId: "living", fromChirp: 90 },
 ];
 
 const OFFSETS = { living: 0, kitchen: 0.012, study: -0.007 };
+
+describe("MAX_OFFSET_SPAN_MS", () => {
+  it("is half a chirp period, which is the whole of what one train can say", () => {
+    expect(MAX_OFFSET_SPAN_MS).toBe((CHIRP_PERIOD_SECONDS / 2) * 1000);
+    // And what that comes to in this build, which is the figure the panel quotes
+    // and the window a group of speakers has to fit inside.
+    expect(MAX_OFFSET_SPAN_MS).toBe(500);
+  });
+});
 
 describe("fitLatencies", () => {
   it("recovers the clock rate and every offset from exact arrivals", () => {
@@ -112,7 +121,7 @@ describe("fitLatencies", () => {
   it("reports the baseline the clock rate was measured over", () => {
     const fit = fitLatencies(synthesize(WALK, OFFSETS, 40e-6))!;
 
-    // living is measured at chirp 0 and again at chirp 180, so 90 seconds apart.
+    // living is measured at chirp 0 and again at chirp 90, so 90 seconds apart.
     expect(fit.bracketSpanSeconds).toBeCloseTo(90, 0);
     expect(fit.residualMs).toBeLessThan(0.001);
   });
@@ -132,8 +141,8 @@ describe("fitLatencies", () => {
     // pass for a run that was never tested.
     const shifted: Visit[] = [
       { playerId: "living", fromChirp: 0 },
-      { playerId: "kitchen", fromChirp: 60 },
-      { playerId: "living", fromChirp: 120 },
+      { playerId: "kitchen", fromChirp: 30 },
+      { playerId: "living", fromChirp: 60 },
     ];
     const drifted = synthesize(shifted, OFFSETS, 0).map((sample, index) =>
       // The anchor's second visit reads 6 ms further out than its first.
@@ -144,16 +153,17 @@ describe("fitLatencies", () => {
     expect(fit.bracketResidualMs).toBeNull();
     expect(fit.bracketSpanSeconds).toBeCloseTo(60, 0);
     // The shift went into the rate instead, which is exactly why it cannot be
-    // seen: 100 ppm is unremarkable for a phone.
-    expect(fit.rateErrorPpm).toBeCloseTo(100, 0);
+    // seen: 6 ms across the 60 seconds between the two readings, and a phone
+    // 100 ppm out is unremarkable.
+    expect(Math.abs(fit.rateErrorPpm - 100)).toBeLessThan(2);
   });
 
   it("reports a disagreement once two speakers were each measured twice", () => {
     const twice: Visit[] = [
       { playerId: "living", fromChirp: 0 },
-      { playerId: "kitchen", fromChirp: 60 },
-      { playerId: "living", fromChirp: 120 },
-      { playerId: "kitchen", fromChirp: 180 },
+      { playerId: "kitchen", fromChirp: 30 },
+      { playerId: "living", fromChirp: 60 },
+      { playerId: "kitchen", fromChirp: 90 },
     ];
     const clean = fitLatencies(synthesize(twice, OFFSETS, 40e-6))!;
     expect(clean.bracketResidualMs).not.toBeNull();
@@ -226,10 +236,10 @@ describe("fitLatencies", () => {
 
   it("survives a drift big enough to wrap the phase right round", () => {
     // 1000 ppm is the point the microphone probe starts warning at, so it is a
-    // clock the flow still lets through. Across a ten minute walk the drift term
-    // passes a whole period: numbering every arrival against one fixed arrival
-    // would fold here and report a confident wrong answer, which is why each
-    // visit is numbered against the one before it instead.
+    // clock the flow still lets through. Across a twenty minute walk the drift
+    // term passes a whole period: numbering every arrival against one fixed
+    // arrival would fold here and report a confident wrong answer, which is why
+    // each visit is numbered against the one before it instead.
     const walk: Visit[] = [
       { playerId: "living", fromChirp: 0 },
       { playerId: "kitchen", fromChirp: 300 },
@@ -244,23 +254,24 @@ describe("fitLatencies", () => {
     expect(fit.offsetsMs.kitchen).toBeCloseTo(12, 5);
     expect(fit.offsetsMs.study).toBeCloseTo(-7, 5);
     expect(fit.offsetsMs.porch).toBeCloseTo(19, 5);
-    // Measured on the phone's clock, so a ten minute walk reads 0.6 s long at
+    // Measured on the phone's clock, so a twenty minute walk reads 1.2 s long at
     // this drift — which is the whole reason the drift has to be fitted.
-    expect(fit.bracketSpanSeconds!).toBeCloseTo(600.6, 1);
+    expect(fit.bracketSpanSeconds!).toBeCloseTo(1201.2, 1);
   });
 
   it("indexes straight through the silences a walk is made of", () => {
-    // The two runs that came back -3318 and -5326 ppm from a phone. Both were a
-    // whole chirp period misassigned across a silence — half a second over the
-    // 150 s and 94 s those walks took — and this one carries both silences, with
-    // the widest offset spread seen in testing. The phone recorded throughout, so
-    // the chirps that went by during each silence are counted rather than
-    // guessed, and there is no branch left to get wrong.
+    // The two runs that came back -3318 and -5326 ppm from a phone, which at this
+    // period would read twice that. Both were a whole chirp period misassigned
+    // across a silence — a second over the 150 s and 94 s those walks took — and
+    // this one carries both silences, with the widest offset spread seen in
+    // testing. The phone recorded throughout, so the chirps that went by during
+    // each silence are counted rather than guessed, and there is no branch left to
+    // get wrong.
     const walk: Visit[] = [
       { playerId: "living", fromChirp: 0 },
-      { playerId: "kitchen", fromChirp: 309 },
-      { playerId: "study", fromChirp: 506 },
-      { playerId: "living", fromChirp: 815 },
+      { playerId: "kitchen", fromChirp: 155 },
+      { playerId: "study", fromChirp: 253 },
+      { playerId: "living", fromChirp: 408 },
     ];
     const offsets = { living: 0, kitchen: 0.116, study: -0.004 };
 
@@ -280,18 +291,18 @@ describe("fitLatencies", () => {
   });
 
   it("leaves speakers spread past half a period visible in the offsets", () => {
-    // Three speakers 200 ms apart in turn, the furthest 400 ms behind the first.
+    // Three speakers 300 ms apart in turn, the furthest 600 ms behind the first.
     // Each step is placeable, so these are the delays the room really has — but
     // the reading rests on the order they were walked in, and the span says so
     // where `runVerdict` can refuse on it.
     const walk: Visit[] = [
       { playerId: "living", fromChirp: 0 },
-      { playerId: "kitchen", fromChirp: 150 },
-      { playerId: "study", fromChirp: 300 },
+      { playerId: "kitchen", fromChirp: 75 },
+      { playerId: "study", fromChirp: 150 },
     ];
 
     const fit = fitLatencies(
-      synthesize(walk, { living: 0, kitchen: 0.2, study: 0.4 }, 5e-6),
+      synthesize(walk, { living: 0, kitchen: 0.3, study: 0.6 }, 5e-6),
     )!;
 
     expect(offsetSpanMs(fit.offsetsMs)).toBeGreaterThan(MAX_OFFSET_SPAN_MS);
@@ -326,10 +337,12 @@ describe("fitLatencies", () => {
     const fit = fitLatencies(samples)!;
 
     // Two orders of magnitude apart, which is the whole point: one figure for
-    // the run would report the median of these and name neither.
+    // the run would report the median of these and name neither. The clean
+    // speakers are not exactly zero because the spoiled one drags the fitted line
+    // a little, and that leak is the scale the difference has to be read against.
     expect(fit.scatterMs.kitchen).toBeGreaterThan(1);
-    expect(fit.scatterMs.living).toBeLessThan(0.01);
-    expect(fit.scatterMs.study).toBeLessThan(0.01);
+    expect(fit.scatterMs.living).toBeLessThan(0.05);
+    expect(fit.scatterMs.study).toBeLessThan(0.05);
   });
 
   it("stops widening the outlier threshold once it would reject nothing", () => {

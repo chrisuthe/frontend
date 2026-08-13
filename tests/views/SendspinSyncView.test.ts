@@ -1,4 +1,5 @@
 import SendspinSyncResults from "@/components/sendspin-sync/SendspinSyncResults.vue";
+import { CHIRP_PERIOD_SECONDS } from "@/helpers/sendspin-sync/chirp";
 import type { CalibrationApplyResult } from "@/plugins/api/interfaces";
 import SendspinSyncView from "@/views/SendspinSyncView.vue";
 import { mount } from "@vue/test-utils";
@@ -62,6 +63,7 @@ function makeState() {
     needsBracket: ref(false),
     fit: ref<unknown>(null),
     loss: ref({ dropouts: 0, worstFraction: 0 }),
+    spacingSeconds: ref<number | null>(CHIRP_PERIOD_SECONDS),
     verdict: ref<string | null>(null),
     trustworthy: ref(false),
     crossChecked: ref(false),
