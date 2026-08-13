@@ -153,8 +153,9 @@ const anyManual = computed(() => players.some((player) => !player.adjustable));
 /**
  * Add or remove one speaker, keeping the order the user picked them in.
  *
- * That order is the order they will be walked, and the first one is the speaker
- * every other reading ends up relative to.
+ * Ticking appends rather than re-sorting, so the walk lists the speakers in a
+ * stable order the user chose. Which one is walked first is decided there, not
+ * here.
  */
 function toggle(playerId: string, checked: boolean | "indeterminate"): void {
   emit(

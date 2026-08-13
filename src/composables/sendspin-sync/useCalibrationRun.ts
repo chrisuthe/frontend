@@ -100,8 +100,15 @@ export function useCalibrationRun() {
   const samples = ref<ArrivalSample[]>([]);
   let nextVisit = 0;
 
-  /** The speaker every other reading is relative to, and the one to re-measure. */
-  const anchor = computed(() => selected.value[0] ?? null);
+  /**
+   * The speaker every other reading is relative to, and the one to re-measure.
+   *
+   * Whichever speaker was measured first, rather than whichever was ticked first:
+   * the fit fixes its offset at zero by the order the arrivals came in, and the
+   * walk is free to visit the speakers in any order at all. `null` until there is
+   * a reading, because until then nothing is a reference yet.
+   */
+  const anchor = computed(() => visits.value[0]?.playerId ?? null);
 
   const measured = computed(
     () => new Set(visits.value.map((visit) => visit.playerId)),
@@ -126,6 +133,17 @@ export function useCalibrationRun() {
       current.bracketSpanSeconds < MIN_BRACKET_FRACTION * current.runSpanSeconds
     );
   });
+
+  /**
+   * True once one more repeat would turn a run that only pins the clock rate
+   * into one that tests it.
+   *
+   * `pinned` is exactly that state and nothing else is: the rate rests on a
+   * single repeat, which the fit absorbs whole and so cannot also check. Every
+   * other verdict has either been checked already or has something wrong with it
+   * that another reading would not answer.
+   */
+  const needsCheck = computed(() => verdict.value === "pinned");
 
   const fit = computed<LatencyFit | null>(() => fitLatencies(samples.value));
 
@@ -322,6 +340,7 @@ export function useCalibrationRun() {
     anchor,
     remaining,
     needsBracket,
+    needsCheck,
     fit,
     loss,
     spacingSeconds,

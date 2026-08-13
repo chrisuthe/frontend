@@ -61,6 +61,7 @@ function makeState() {
     anchor: ref<string | null>(null),
     remaining: ref<string[]>([]),
     needsBracket: ref(false),
+    needsCheck: ref(false),
     fit: ref<unknown>(null),
     loss: ref({ dropouts: 0, worstFraction: 0 }),
     spacingSeconds: ref<number | null>(CHIRP_PERIOD_SECONDS),
@@ -126,7 +127,7 @@ describe("SendspinSyncView", () => {
       "providers.sendspin_sync.calibration.pick.title",
     );
     expect(wrapper.text()).not.toContain(
-      "providers.sendspin_sync.calibration.walk.title",
+      "providers.sendspin_sync.calibration.walk.step.start.title",
     );
   });
 
@@ -168,7 +169,7 @@ describe("SendspinSyncView", () => {
     await wrapper.vm.$nextTick();
 
     expect(wrapper.text()).toContain(
-      "providers.sendspin_sync.calibration.walk.title",
+      "providers.sendspin_sync.calibration.walk.step.start.title",
     );
     expect(wrapper.text()).toContain("Living room");
   });

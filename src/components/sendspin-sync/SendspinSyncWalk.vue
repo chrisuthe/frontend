@@ -1,83 +1,79 @@
 <template>
   <Card class="gap-4">
-    <CardHeader>
-      <CardTitle>{{ $t(`${KEYS}.walk.title`) }}</CardTitle>
-      <CardDescription>{{ $t(`${KEYS}.walk.description`) }}</CardDescription>
+    <!-- One ask at a time, and it is what the user is waiting on, so it is what
+         gets announced when it changes. -->
+    <CardHeader role="status" aria-live="polite">
+      <CardTitle>{{
+        $t(`${KEYS}.walk.step.${step}.title`, promptValues)
+      }}</CardTitle>
+      <CardDescription>
+        {{ $t(`${KEYS}.walk.step.${step}.description`, promptValues) }}
+      </CardDescription>
     </CardHeader>
 
     <CardContent class="space-y-4">
-      <!-- What the user is waiting on, so it is what gets announced. -->
-      <Alert
-        v-if="needsBracket"
-        role="status"
-        aria-live="polite"
-        variant="info"
-      >
-        <RotateCcw class="h-4 w-4" aria-hidden="true" />
-        <AlertTitle>{{ $t(`${KEYS}.walk.bracket.title`) }}</AlertTitle>
-        <AlertDescription>
-          {{ $t(`${KEYS}.walk.bracket.description`, [anchorName]) }}
-        </AlertDescription>
-      </Alert>
+      <div class="grid gap-3 sm:grid-cols-2">
+        <Button
+          v-for="target in targets"
+          :key="target.playerId"
+          :variant="target.asked ? 'default' : 'outline'"
+          class="h-auto min-h-16 w-full justify-start gap-3 px-4 py-3 text-left whitespace-normal has-[>svg]:px-4"
+          :disabled="disabled"
+          @click="emit('measure', target.playerId)"
+        >
+          <!-- Ahead of the name so the button announces as an action rather than
+               as a speaker that happens to be pressable. -->
+          <span class="sr-only">
+            {{ $t(`${KEYS}.walk.${target.reading ? "again" : "measure"}`) }}
+          </span>
+          <Spinner
+            v-if="measuring === target.playerId"
+            class="size-5 shrink-0"
+            aria-hidden="true"
+          />
+          <Check
+            v-else-if="target.reading"
+            class="size-5 shrink-0"
+            aria-hidden="true"
+          />
+          <Mic v-else class="size-5 shrink-0" aria-hidden="true" />
 
-      <ul class="divide-y border-t">
-        <li v-for="step in steps" :key="step.playerId" class="py-3">
-          <div class="flex items-center justify-between gap-3">
-            <div class="min-w-0">
-              <p class="truncate font-medium">{{ step.name }}</p>
-              <p class="text-sm text-muted-foreground">
-                {{
-                  step.reading
-                    ? $t(`${KEYS}.walk.found`, [
-                        step.reading.found,
-                        step.reading.expected,
-                      ])
-                    : $t(`${KEYS}.walk.not_measured`)
-                }}
-              </p>
-            </div>
+          <span class="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span class="text-base leading-tight font-medium">
+              {{ target.name }}
+            </span>
+            <span class="text-sm font-normal opacity-80">
+              {{
+                target.reading
+                  ? $t(`${KEYS}.walk.found`, [
+                      target.reading.found,
+                      target.reading.expected,
+                    ])
+                  : $t(`${KEYS}.walk.not_measured`)
+              }}
+            </span>
+          </span>
 
-            <div class="flex shrink-0 items-center gap-2">
-              <Badge
-                v-if="step.confidence"
-                :variant="CONFIDENCE_VARIANT[step.confidence]"
-              >
-                {{ $t(`${KEYS}.confidence.${step.confidence}`) }}
-              </Badge>
-              <Button
-                :variant="step.next ? 'default' : 'outline'"
-                size="sm"
-                :disabled="disabled"
-                @click="emit('measure', step.playerId)"
-              >
-                <Spinner
-                  v-if="measuring === step.playerId"
-                  class="size-4"
-                  aria-hidden="true"
-                />
-                <Mic v-else class="size-4" aria-hidden="true" />
-                {{
-                  step.reading
-                    ? $t(`${KEYS}.walk.again`)
-                    : $t(`${KEYS}.walk.measure`)
-                }}
-              </Button>
-            </div>
-          </div>
-        </li>
-      </ul>
+          <Badge
+            v-if="target.confidence"
+            :variant="CONFIDENCE_VARIANT[target.confidence]"
+            class="shrink-0"
+          >
+            {{ $t(`${KEYS}.confidence.${target.confidence}`) }}
+          </Badge>
+        </Button>
+      </div>
 
       <!-- Deliberately not a live region: the countdown would talk over the
            screen reader for the whole recording. -->
-      <p v-if="measuring" class="text-sm text-muted-foreground">
-        {{ $t(`${KEYS}.walk.listening`) }}
+      <p class="text-sm text-muted-foreground">
+        {{ measuring ? $t(`${KEYS}.walk.listening`) : $t(`${KEYS}.walk.how`) }}
       </p>
     </CardContent>
   </Card>
 </template>
 
 <script setup lang="ts">
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge, type BadgeVariants } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -94,7 +90,7 @@ import {
   type Confidence,
 } from "@/helpers/sendspin-sync/confidence";
 import type { CalibrationPlayer } from "@/plugins/api/interfaces";
-import { Mic, RotateCcw } from "@lucide/vue";
+import { Check, Mic } from "@lucide/vue";
 import { computed } from "vue";
 
 const KEYS = "providers.sendspin_sync.calibration";
@@ -105,17 +101,30 @@ const CONFIDENCE_VARIANT: Record<Confidence, BadgeVariants["variant"]> = {
   poor: "destructive",
 };
 
-const { players, selected, visits, anchor, needsBracket, disabled, measuring } =
-  defineProps<{
-    players: CalibrationPlayer[];
-    selected: string[];
-    visits: Measurement[];
-    anchor: string | null;
-    needsBracket: boolean;
-    disabled: boolean;
-    /** The speaker currently being recorded, if any. */
-    measuring: string | null;
-  }>();
+/** Where the walk has got to, which is the one thing the screen asks for. */
+type Step = "start" | "next" | "repeat" | "check" | "done";
+
+const {
+  players,
+  selected,
+  visits,
+  anchor,
+  needsBracket,
+  needsCheck,
+  disabled,
+  measuring,
+} = defineProps<{
+  players: CalibrationPlayer[];
+  selected: string[];
+  visits: Measurement[];
+  /** The speaker measured first, which the repeat is asked of. */
+  anchor: string | null;
+  needsBracket: boolean;
+  needsCheck: boolean;
+  disabled: boolean;
+  /** The speaker currently being recorded, if any. */
+  measuring: string | null;
+}>();
 
 const emit = defineEmits<{ measure: [playerId: string] }>();
 
@@ -123,34 +132,81 @@ const names = computed(
   () => new Map(players.map((player) => [player.player_id, player.name])),
 );
 
-const anchorName = computed(() =>
-  anchor ? (names.value.get(anchor) ?? anchor) : "",
+function nameOf(playerId: string): string {
+  return names.value.get(playerId) ?? playerId;
+}
+
+/** The most recent reading of each speaker, by player id. */
+const readings = computed(() => {
+  const latest = new Map<string, Measurement>();
+  for (const visit of visits) latest.set(visit.playerId, visit);
+  return latest;
+});
+
+/**
+ * The speaker to repeat once the clock rate is pinned but untested.
+ *
+ * The earliest measured of those still read only once, because the second
+ * reading has to sit far enough from the first to say anything: the same reason
+ * the walk asks for the anchor at the end rather than in the middle.
+ */
+const checkTarget = computed(() => {
+  const counts = new Map<string, number>();
+  for (const visit of visits)
+    counts.set(visit.playerId, (counts.get(visit.playerId) ?? 0) + 1);
+  return (
+    visits.find((visit) => counts.get(visit.playerId) === 1)?.playerId ?? null
+  );
+});
+
+const step = computed<Step>(() => {
+  if (!visits.length) return "start";
+  if (selected.some((playerId) => !readings.value.has(playerId))) return "next";
+  if (needsBracket && anchor) return "repeat";
+  if (needsCheck && checkTarget.value) return "check";
+  return "done";
+});
+
+/** The speaker the current step names, if it names one. */
+const asked = computed(() => {
+  switch (step.value) {
+    case "repeat":
+      return anchor;
+    case "check":
+      return checkTarget.value;
+    default:
+      return null;
+  }
+});
+
+/** What the current step's wording has to fill in. */
+const promptValues = computed(() =>
+  step.value === "next"
+    ? [readings.value.size, selected.length]
+    : [asked.value ? nameOf(asked.value) : ""],
 );
 
 /**
- * One row per speaker, carrying its most recent reading.
+ * One button per speaker, in the order they were picked.
  *
- * The speaker to do next is marked so exactly one button reads as the primary
- * action — the bracketing re-measure of the first speaker once the rest are done,
- * and otherwise the first speaker still outstanding.
+ * `asked` marks the speakers this step is asking for, which is the only thing
+ * the emphasis means — every speaker stays pressable at every step, because
+ * going out of order measures perfectly well and re-measuring is what the
+ * closing steps ask for outright.
  */
-const steps = computed(() => {
-  const next = needsBracket
-    ? anchor
-    : (selected.find(
-        (playerId) => !visits.some((visit) => visit.playerId === playerId),
-      ) ?? null);
-
-  return selected.map((playerId) => {
-    const readings = visits.filter((visit) => visit.playerId === playerId);
-    const reading = readings[readings.length - 1] ?? null;
+const targets = computed(() =>
+  selected.map((playerId) => {
+    const reading = readings.value.get(playerId) ?? null;
     return {
       playerId,
-      name: names.value.get(playerId) ?? playerId,
+      name: nameOf(playerId),
       reading,
       confidence: reading ? measurementConfidence(reading) : null,
-      next: playerId === next,
+      asked:
+        asked.value === null
+          ? step.value !== "done" && !reading
+          : asked.value === playerId,
     };
-  });
-});
+  }),
+);
 </script>

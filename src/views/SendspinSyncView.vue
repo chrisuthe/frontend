@@ -66,6 +66,7 @@
           :visits="visits"
           :anchor="anchor"
           :needs-bracket="needsBracket"
+          :needs-check="needsCheck"
           :disabled="phase === 'measuring'"
           :measuring="measuringPlayerId"
           @measure="measure($event)"
@@ -145,6 +146,7 @@ const {
   measuringPlayerId,
   anchor,
   needsBracket,
+  needsCheck,
   remaining,
   fit,
   loss,
