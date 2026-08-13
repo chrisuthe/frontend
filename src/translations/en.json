@@ -1853,6 +1853,7 @@
         "sendspin_sync": {
             "title": "Sendspin Sync",
             "calibration": {
+                "open": "Even out speaker timing",
                 "subtitle": "Walk to each speaker with this phone. It listens for a calibration chirp and works out how far apart their timing is, then evens them out.",
                 "diagnostics": "Microphone diagnostics",
                 "toast": {

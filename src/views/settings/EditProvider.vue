@@ -187,6 +187,15 @@
             {{ $t("settings.reconfigure") }}
           </Button>
           <Button
+            v-if="canCalibrateSendspinSync"
+            data-testid="provider-sendspin-sync-calibrate"
+            variant="outline"
+            @click="openSendspinSyncCalibration"
+          >
+            <AudioLines class="size-4" />
+            {{ $t("providers.sendspin_sync.calibration.open") }}
+          </Button>
+          <Button
             v-if="documentationUrl"
             as="a"
             data-testid="provider-documentation"
@@ -314,7 +323,9 @@ import {
   ProviderStatus,
 } from "@/plugins/api/interfaces";
 import { eventbus } from "@/plugins/eventbus";
+import { store } from "@/plugins/store";
 import {
+  AudioLines,
   BookOpen,
   CircleAlert,
   MoreVertical,
@@ -331,6 +342,8 @@ import { useRouter } from "vue-router";
 import { toast } from "vue-sonner";
 import AdvancedSettingsToggle from "./AdvancedSettingsToggle.vue";
 import EditConfig from "./EditConfig.vue";
+
+const SENDSPIN_SYNC_DOMAIN = "sendspin_sync";
 
 // global refs
 const router = useRouter();
@@ -403,6 +416,14 @@ const documentationUrl = computed(() => {
   return getExternalLinkUrl(providerManifest.value?.documentation);
 });
 
+// Mirrors the sendspin-sync route guard, so the link is only offered when
+// following it actually reaches the calibration page.
+const canCalibrateSendspinSync = computed(
+  () =>
+    config.value?.domain === SENDSPIN_SYNC_DOMAIN &&
+    store.enabledPlugins.has(SENDSPIN_SYNC_DOMAIN),
+);
+
 // watchers
 watch(
   () => props.instanceId,
@@ -434,6 +455,10 @@ const backToProviders = function () {
     name: "providersettings",
     query: { types: config.value?.type },
   });
+};
+
+const openSendspinSyncCalibration = function () {
+  router.push({ name: "sendspin-sync" });
 };
 
 const resetToDefaults = function () {
