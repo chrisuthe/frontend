@@ -73,6 +73,7 @@ describe("useChirpCapture", () => {
     node.emit({
       startFrame: 96_000,
       dropouts: 0,
+      lostFrames: 0,
       samples: Float32Array.from({ length: 600 }, (_, index) => index),
     });
     const recording = await pending;
@@ -94,6 +95,7 @@ describe("useChirpCapture", () => {
     node.emit({
       startFrame: 1000,
       dropouts: 0,
+      lostFrames: 0,
       samples: Float32Array.from({ length: 128 }, () => 1),
     });
     // The next batch starts 128 frames later than it would if they were simply
@@ -101,6 +103,7 @@ describe("useChirpCapture", () => {
     node.emit({
       startFrame: 1000 + 256,
       dropouts: 3,
+      lostFrames: 128,
       samples: Float32Array.from({ length: 1000 }, () => 2),
     });
     const recording = await pending;
@@ -110,7 +113,10 @@ describe("useChirpCapture", () => {
     expect(recording!.samples[128]).toBe(0);
     expect(recording!.samples[255]).toBe(0);
     expect(recording!.samples[256]).toBe(2);
+    // The tallies run from the moment the worklet was armed, so the last message
+    // carries the whole recording's rather than that batch's own.
     expect(recording!.dropouts).toBe(3);
+    expect(recording!.lostFrames).toBe(128);
   });
 
   it("gives up rather than hanging when the device stops delivering", async () => {

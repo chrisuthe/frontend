@@ -33,6 +33,7 @@ import {
   isApplicable,
   MIN_BRACKET_FRACTION,
   runVerdict,
+  type CaptureLoss,
 } from "@/helpers/sendspin-sync/verdict";
 import type { CalibrationApplyResult } from "@/plugins/api/interfaces";
 import { computed, ref, watch } from "vue";
@@ -63,8 +64,10 @@ export interface Measurement {
   expected: number;
   /** Typical peak-to-noise ratio of those arrivals. */
   medianSnr: number;
-  /** Render quanta the microphone delivered nothing for. */
+  /** Render quanta of this recording nothing was heard for. */
   dropouts: number;
+  /** The share of this recording those quanta cover, 0 to 1. */
+  lostFraction: number;
 }
 
 export type RunPhase = "picking" | "walking" | "measuring" | "voided";
@@ -113,9 +116,24 @@ export function useCalibrationRun() {
 
   const fit = computed<LatencyFit | null>(() => fitLatencies(samples.value));
 
+  /**
+   * What the run's recordings lost between them.
+   *
+   * The worst single recording rather than an average: one spoiled reading is
+   * enough to move the speaker it belongs to, and a run-wide figure would bury it
+   * under however many clean recordings surround it.
+   */
+  const loss = computed<CaptureLoss>(() => ({
+    dropouts: visits.value.reduce((total, visit) => total + visit.dropouts, 0),
+    worstFraction: visits.value.reduce(
+      (worst, visit) => Math.max(worst, visit.lostFraction),
+      0,
+    ),
+  }));
+
   /** What this run can honestly say about itself, or `null` before it can. */
   const verdict = computed(() =>
-    fit.value ? runVerdict(fit.value, selected.value) : null,
+    fit.value ? runVerdict(fit.value, selected.value, loss.value) : null,
   );
 
   /** Whether the offsets may be applied. */
@@ -194,6 +212,9 @@ export function useCalibrationRun() {
           expected: scan.expected,
           medianSnr: scan.medianSnr,
           dropouts: recording.dropouts,
+          lostFraction: recording.samples.length
+            ? recording.lostFrames / recording.samples.length
+            : 0,
         },
       ];
       return scan.arrivals.length > 0;
@@ -270,6 +291,7 @@ export function useCalibrationRun() {
     remaining,
     needsBracket,
     fit,
+    loss,
     verdict,
     trustworthy,
     applyResult,

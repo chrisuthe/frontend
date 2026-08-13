@@ -114,7 +114,7 @@ function recordingAt(options: {
     state = (state * 1103515245 + 12345) % 2147483648;
     samples[index] += (state / 2147483648 - 0.5) * 0.01;
   }
-  return { samples, firstFrame, sampleRate: RATE, dropouts: 0 };
+  return { samples, firstFrame, sampleRate: RATE, dropouts: 0, lostFrames: 0 };
 }
 
 function placeChirp(buffer: Float32Array, at: number): void {
@@ -270,6 +270,54 @@ describe("useCalibrationRun", () => {
     // One repeated speaker sets the clock rate; it cannot also test it.
     expect(fit.bracketResidualMs).toBeNull();
     expect(run.verdict.value).toBe("pinned");
+  });
+
+  it("refuses to apply a run whose recording had holes in it", async () => {
+    const run = await started();
+    for (const visit of [
+      { startSeconds: 0, offsetSeconds: 0, player: "living" },
+      { startSeconds: 30, offsetSeconds: 0.012, player: "kitchen" },
+      { startSeconds: 60, offsetSeconds: 0, player: "living" },
+    ]) {
+      const recording = recordingAt({ ...visit, drift: 0 });
+      // Only the middle reading, so the run-wide totals stay modest and it is the
+      // worst single recording that decides.
+      if (visit.player === "kitchen") {
+        recording.dropouts = 96;
+        recording.lostFrames = 96 * 128;
+      }
+      fakes.capture.record.mockResolvedValue(recording);
+      await measure(run, visit.player);
+    }
+
+    expect(run.loss.value.dropouts).toBe(96);
+    expect(run.loss.value.worstFraction).toBeCloseTo(0.0465, 3);
+    // Otherwise a clean-looking run: the fit has nothing to complain about, which
+    // is exactly why the recording has to be judged separately from it.
+    expect(run.verdict.value).toBe("lossy");
+    expect(run.trustworthy.value).toBe(false);
+    expect(await run.apply()).toBe(false);
+    expect(fakes.session.apply).not.toHaveBeenCalled();
+  });
+
+  it("holds nothing against a run that heard everything", async () => {
+    const run = await started();
+    for (const visit of [
+      { startSeconds: 0, offsetSeconds: 0, player: "living" },
+      { startSeconds: 30, offsetSeconds: 0.012, player: "kitchen" },
+      { startSeconds: 60, offsetSeconds: 0, player: "living" },
+    ]) {
+      fakes.capture.record.mockResolvedValue(
+        recordingAt({ ...visit, drift: 0 }),
+      );
+      await measure(run, visit.player);
+    }
+
+    // Thirty seconds between speakers each time, and none of it counted: the
+    // silences a walk is made of are free, and saying otherwise here would be a
+    // reason to hurry that the measurement does not have.
+    expect(run.loss.value).toEqual({ dropouts: 0, worstFraction: 0 });
+    expect(run.trustworthy.value).toBe(true);
   });
 
   it("refuses to apply a run that was never bracketed", async () => {

@@ -61,6 +61,7 @@ function makeState() {
     remaining: ref<string[]>([]),
     needsBracket: ref(false),
     fit: ref<unknown>(null),
+    loss: ref({ dropouts: 0, worstFraction: 0 }),
     verdict: ref<string | null>(null),
     trustworthy: ref(false),
     crossChecked: ref(false),

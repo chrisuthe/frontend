@@ -51,8 +51,16 @@ export interface Recording {
   /** Frame index of the first sample, on the phone's audio clock. */
   firstFrame: number;
   sampleRate: number;
-  /** Render quanta the capture device delivered nothing for. */
+  /** Render quanta of this recording nothing was heard for. */
   dropouts: number;
+  /**
+   * How many frames those quanta cover, to read against `samples.length`.
+   *
+   * Reported separately from the count because only the worklet knows how long a
+   * render quantum is here, and how much of a recording was lost is the figure
+   * that decides whether its arrivals are readings at all.
+   */
+  lostFrames: number;
 }
 
 /** How often the render clock is checked against the system clock. */
@@ -79,9 +87,10 @@ const CLOCK_LAG_SECONDS = 0.15;
 const RECORD_GRACE_MS = 2000;
 
 /** One message from the capture worklet. */
-interface CaptureBatch {
+export interface CaptureBatch {
   startFrame: number;
   dropouts: number;
+  lostFrames: number;
   samples: Float32Array;
 }
 
@@ -240,7 +249,6 @@ export function useChirpCapture() {
       return await new Promise<Recording | null>((resolve) => {
         const batches: CaptureBatch[] = [];
         let collected = 0;
-        let dropouts = 0;
         let settled = false;
 
         const finish = () => {
@@ -252,13 +260,12 @@ export function useChirpCapture() {
           // the port fires it at nobody.
           node.port.onmessage = null;
           node.port.postMessage({ armed: false });
-          resolve(assemble(batches, dropouts, rate));
+          resolve(assemble(batches, rate));
         };
 
         node.port.onmessage = (event: MessageEvent<CaptureBatch>) => {
           batches.push(event.data);
           collected += event.data.samples.length;
-          dropouts = event.data.dropouts;
           if (collected >= wanted) finish();
         };
 
@@ -356,11 +363,15 @@ export function useChirpCapture() {
  *
  * Each batch is placed by its own frame index rather than appended, so a gap
  * between batches stays a gap of silence at the right length instead of pulling
- * every later sample earlier.
+ * every later sample earlier. Those indices come off the render clock, which is
+ * what makes the gap the right length rather than merely a gap.
+ *
+ * Exported for the tests that drive the worklet's own output through the
+ * measurement: this is the seam where frame indices become a timeline, and the
+ * cheapest place to prove a dropped stretch keeps its width.
  */
-function assemble(
+export function assemble(
   batches: CaptureBatch[],
-  dropouts: number,
   sampleRate: number,
 ): Recording | null {
   if (!batches.length) return null;
@@ -372,5 +383,13 @@ function assemble(
   for (const batch of batches)
     samples.set(batch.samples, batch.startFrame - firstFrame);
 
-  return { samples, firstFrame, sampleRate, dropouts };
+  // The tallies run from the moment the worklet was armed, so the last message
+  // to arrive carries the whole recording's.
+  return {
+    samples,
+    firstFrame,
+    sampleRate,
+    dropouts: last.dropouts,
+    lostFrames: last.lostFrames,
+  };
 }

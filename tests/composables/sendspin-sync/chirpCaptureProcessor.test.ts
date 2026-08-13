@@ -14,6 +14,7 @@ const BATCH_FRAMES = 4096;
 interface Batch {
   startFrame: number;
   dropouts: number;
+  lostFrames: number;
   samples: Float32Array;
 }
 
@@ -25,6 +26,8 @@ interface Processor {
 let posted: Batch[] = [];
 let ProcessorClass: new () => Processor;
 let registeredName = "";
+/** The render clock, in frames, standing where the next quantum begins. */
+let clock = 0;
 
 /**
  * The worklet registers itself on import, so its globals have to exist first.
@@ -67,7 +70,14 @@ afterAll(() => {
 
 beforeEach(() => {
   posted = [];
+  tick(0);
 });
+
+/** Put the render clock at `frames`, where the worklet reads it. */
+function tick(frames: number): void {
+  clock = frames;
+  vi.stubGlobal("currentFrame", clock);
+}
 
 /** Run `quanta` render quanta, filling each input frame from `fill`. */
 function render(
@@ -81,13 +91,24 @@ function render(
       ? [
           [
             Float32Array.from({ length: RENDER_QUANTUM }, (_, index) =>
-              fill(quantum * RENDER_QUANTUM + index),
+              fill(clock + index),
             ),
           ],
         ]
       : [[]];
     processor.process(inputs as Float32Array[][], outputs);
+    tick(clock + RENDER_QUANTUM);
   }
+}
+
+/**
+ * Advance the render clock past `quanta` the worklet is never called for.
+ *
+ * What a stalled audio thread does: the engine keeps the clock, `process` simply
+ * does not run, and nothing at all is heard for that whole stretch.
+ */
+function stall(quanta: number): void {
+  tick(clock + quanta * RENDER_QUANTUM);
 }
 
 function arm(processor: Processor, armed: boolean): void {
@@ -161,7 +182,7 @@ describe("chirpCaptureProcessor", () => {
     render(processor, 1, () => 7);
     arm(processor, false);
 
-    const { samples, dropouts } = posted[0];
+    const { samples, dropouts, lostFrames } = posted[0];
     // The dropped quantum still takes up its frames: dropping them instead would
     // pull every later arrival earlier by the length of the gap.
     expect(samples).toHaveLength(3 * RENDER_QUANTUM);
@@ -169,6 +190,64 @@ describe("chirpCaptureProcessor", () => {
     expect(samples[2 * RENDER_QUANTUM - 1]).toBe(0);
     expect(samples[2 * RENDER_QUANTUM]).toBe(7);
     expect(dropouts).toBe(1);
+    expect(lostFrames).toBe(RENDER_QUANTUM);
+  });
+
+  it("numbers batches on the render clock across a stalled audio thread", () => {
+    const processor = new ProcessorClass();
+    arm(processor, true);
+    render(processor, 2, (frame) => frame + 1);
+    stall(3);
+    render(processor, 2, () => 9);
+    arm(processor, false);
+
+    // The samples either side of the stall go out separately, each numbered where
+    // the clock says it starts. A tally of delivered frames would have numbered
+    // the second batch at 256 and closed the hole up, pulling every arrival in it
+    // — and in every recording after it — three quanta early.
+    expect(posted).toHaveLength(2);
+    expect(posted[0].startFrame).toBe(0);
+    expect(posted[0].samples).toHaveLength(2 * RENDER_QUANTUM);
+    expect(posted[1].startFrame).toBe(5 * RENDER_QUANTUM);
+    expect(posted[1].samples).toHaveLength(2 * RENDER_QUANTUM);
+    // Counted onto the batch the stall interrupted rather than the one after it,
+    // so a recording that ends mid-batch still carries the loss.
+    expect(posted[0].dropouts).toBe(3);
+    expect(posted[0].lostFrames).toBe(3 * RENDER_QUANTUM);
+  });
+
+  it("does not count a stall it was not recording through", () => {
+    const processor = new ProcessorClass();
+    render(processor, 5);
+    // Carried upstairs while the phone was busy elsewhere.
+    stall(40);
+    arm(processor, true);
+    render(processor, 2, () => 1);
+    arm(processor, false);
+
+    // The clock accounted for the walk, stall and all, so this recording is
+    // numbered where it really begins. Nothing was lost from it: no chirp was
+    // being listened for, which is why the silences between speakers are free.
+    expect(posted[0].startFrame).toBe(45 * RENDER_QUANTUM);
+    expect(posted[0].dropouts).toBe(0);
+    expect(posted[0].lostFrames).toBe(0);
+  });
+
+  it("falls back to counting quanta where the scope has no render clock", () => {
+    // Older worklet scopes expose no `currentFrame`. Counting is exact for a
+    // quantum that ran and was handed nothing, and blind to one that never ran —
+    // so the recording is still numbered continuously from the graph being built.
+    vi.stubGlobal("currentFrame", undefined);
+    const processor = new ProcessorClass();
+    render(processor, 10);
+    arm(processor, true);
+    render(processor, 1, () => 5);
+    render(processor, 1);
+    arm(processor, false);
+
+    expect(posted[0].startFrame).toBe(10 * RENDER_QUANTUM);
+    expect(posted[0].samples).toHaveLength(2 * RENDER_QUANTUM);
+    expect(posted[0].dropouts).toBe(1);
   });
 
   it("ignores a repeated arm and keeps the batch it is filling", () => {
