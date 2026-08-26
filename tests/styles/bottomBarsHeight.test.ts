@@ -7,17 +7,26 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 const OVERLAY_HEIGHT = "--player-bar-overlay-height";
 const OVERLAY_MARKER = "data-player-bar-overlay";
 const BAR_HEIGHT = "120px";
-const PLAYER_BAR_HEIGHT = "104px";
-const NAVIGATION_HEIGHT =
-  "calc(66px + calc(10px + env(safe-area-inset-bottom, 0px)))";
+const PLAYER_BAR_HEIGHT = "calc( 104px + env(safe-area-inset-bottom, 0px) )";
+const NAVIGATION_INSET =
+  "max( 12px, calc(env(safe-area-inset-bottom, 0px) * 0.65) )";
+const NAVIGATION_HEIGHT = `calc( 72px + ${NAVIGATION_INSET} )`;
 
 let appStyles: HTMLStyleElement;
 
 // happy-dom substitutes every var() but does not evaluate calc(), so the mobile
 // branch is only observable as the expression it composes
 function bottomBarsHeight() {
+  return customProperty("--bottom-bars-height");
+}
+
+function bottomObscuredHeight() {
+  return customProperty("--bottom-obscured-height");
+}
+
+function customProperty(name: string) {
   return getComputedStyle(document.documentElement)
-    .getPropertyValue("--bottom-bars-height")
+    .getPropertyValue(name)
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -43,12 +52,16 @@ describe("bottom bars height", () => {
     document.body.innerHTML = "";
     document.documentElement.removeAttribute(OVERLAY_MARKER);
     document.documentElement.style.removeProperty(OVERLAY_HEIGHT);
+    document.documentElement.style.removeProperty("--device-inset-bottom");
   });
 
   it("reserves the player bar in the desktop layout", () => {
     expect(bottomBarsHeight()).toBe(PLAYER_BAR_HEIGHT);
     // always-rendered elements offset from this, so it has to reach them
-    expect(offsetFromBars()).toBe(PLAYER_BAR_HEIGHT);
+    document.documentElement.style.setProperty("--device-inset-bottom", "0px");
+    expect(offsetFromBars().replace(/\s+/g, " ").trim()).toBe(
+      "calc( 104px + 0px )",
+    );
   });
 
   it("stacks the floating player bar onto the navigation on mobile", () => {
@@ -56,7 +69,24 @@ describe("bottom bars height", () => {
     document.documentElement.style.setProperty(OVERLAY_HEIGHT, BAR_HEIGHT);
 
     expect(bottomBarsHeight()).toBe(
-      `calc( ${NAVIGATION_HEIGHT} + 6px + ${BAR_HEIGHT} )`,
+      `calc( ${NAVIGATION_HEIGHT} + ${BAR_HEIGHT} )`,
+    );
+  });
+
+  it("reaches no further than the bars in the desktop layout", () => {
+    // the scrim is mobile-only, so pulling it in here would push everything
+    // that stacks below it far above the player bar
+    expect(bottomObscuredHeight()).toBe(PLAYER_BAR_HEIGHT);
+  });
+
+  it("reaches no further than the bars on mobile either", () => {
+    document.documentElement.setAttribute(OVERLAY_MARKER, "");
+    document.documentElement.style.setProperty(OVERLAY_HEIGHT, BAR_HEIGHT);
+
+    // the blur behind the bars softens what scrolls under it without hiding
+    // it, so nothing has to clear more than the bars themselves
+    expect(bottomObscuredHeight()).toBe(
+      `calc( ${NAVIGATION_HEIGHT} + ${BAR_HEIGHT} )`,
     );
   });
 });

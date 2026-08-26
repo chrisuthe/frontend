@@ -14,6 +14,10 @@ import {
   setUserPreference,
   useUserPreferences,
 } from "@/composables/userPreferences";
+import {
+  VISUALIZER_BLUR_DEFAULT,
+  VISUALIZER_OPACITY_DEFAULT,
+} from "@/composables/visualizer/state";
 import { store } from "@/plugins/store";
 import {
   visualizerCanRender,
@@ -44,8 +48,14 @@ export function toggleVisualizerForPlayer(playerId?: string): void {
 export function useVisualizer(playerId?: MaybeRefOrGetter<string | undefined>) {
   const { getPreference } = useUserPreferences();
   const visualizerPresetPref = getPreference("visualizer_preset", "");
-  const visualizerBlurPref = getPreference("visualizer_blur", 0);
-  const visualizerOpacityPref = getPreference("visualizer_opacity", 100);
+  const visualizerBlurPref = getPreference(
+    "visualizer_blur",
+    VISUALIZER_BLUR_DEFAULT,
+  );
+  const visualizerOpacityPref = getPreference(
+    "visualizer_opacity",
+    VISUALIZER_OPACITY_DEFAULT,
+  );
 
   const visualizerEnabledPref = computed(() =>
     visualizerEnabledForPlayer(toValue(playerId)),

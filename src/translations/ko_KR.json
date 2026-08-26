@@ -29,7 +29,6 @@
     "delete_db": "데이터베이스에서 항목 삭제",
     "details": "세부 정보",
     "enter_url": "데이터베이스에 수동으로 추가하려는 URL을 입력하세요.",
-    "external_source_active": "외부 소스 활성화: {0}",
     "goto_album": "앨범 {0} 으로 이동",
     "goto_artist": "아티스트 {0} 로 이동",
     "items_selected": "선택한 항목 {0}개",
@@ -54,8 +53,7 @@
     "player_type": {
         "group": "그룹",
         "player": "플레이어",
-        "stereo_pair": "스테레오 페어",
-        "sync_group": "동기화 그룹"
+        "stereo_pair": "스테레오 페어"
     },
     "players": "플레이어",
     "playlist": "재생 목록",
@@ -261,7 +259,6 @@
         "open_provider_link": "공급자의 웹 사이트에서 이 항목을 엽니다.",
         "collapse_expand": "이 목록 접기\/펼치기",
         "back": "뒤로",
-        "show_menu": "메뉴 표시\/숨기기",
         "search_filter_active": "현재 검색 결과를 필터링하고 있습니다.",
         "play_sample": "간편 재생",
         "album_type": "앨범 유형",

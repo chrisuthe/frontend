@@ -1,16 +1,7 @@
 <template>
-  <!-- gradient background panel to make the footer player more elevated (and hide content behind it)-->
-  <div
-    v-if="store.mobileLayout"
-    :class="$vuetify.theme.current.dark ? 'gradient-dark' : 'gradient-light'"
-    :style="`
-      position: fixed;
-      width: 100%;
-      height: var(--mobile-player-scrim-height);
-      bottom: 0px;
-      z-index: 999;
-    `"
-  ></div>
+  <!-- lifts the player off the content by blurring what scrolls under it,
+       fading out towards the top so there is no hard edge -->
+  <div v-if="store.mobileLayout" class="player-scrim"></div>
 
   <!-- bottom navigation for mobile layout -->
   <BottomNavigation v-if="store.mobileLayout" />
@@ -24,9 +15,11 @@
         ? 'mediacontrols-player-float'
         : 'mediacontrols-player-default'
     }`"
-    :style="
-      store.mobileLayout ? { bottom: 'var(--mobile-navigation-height)' } : {}
-    "
+    :style="{
+      bottom: store.mobileLayout
+        ? 'var(--mobile-navigation-height)'
+        : 'var(--device-inset-bottom)',
+    }"
   >
     <Player :use-floating-player="store.mobileLayout" />
   </v-footer>
@@ -81,26 +74,43 @@ function clearOverlay() {
 .mediacontrols-player-float {
   display: flex;
   flex-direction: column;
-  margin: 5px;
-  margin-bottom: 6px;
-  width: calc(100% - 10px) !important;
-  border-radius: 10px !important;
+  /* the card's inset carries the dock's rim, so the surface shows the same
+     sliver down both sides as it does above. The vertical margins are omitted:
+     the bar is fixed and anchored by its bottom, so they would not move it. */
+  margin: 0 calc(var(--mobile-player-inset-x) + var(--device-inset-right)) 0
+    calc(var(--mobile-player-inset-x) + var(--device-inset-left));
+  width: calc(
+    100% - 2 * var(--mobile-player-inset-x) - var(--device-inset-right) -
+      var(--device-inset-left)
+  ) !important;
+  border-radius: 16px !important;
 }
 
-.gradient-dark {
-  background: linear-gradient(
-    0deg,
-    rgba(0, 0, 0, 0.9) 0%,
-    rgba(0, 0, 0, 0.9) 75%,
-    rgba(255, 255, 255, 0) 100%
+.player-scrim {
+  position: fixed;
+  bottom: 0;
+  width: 100%;
+  height: var(--mobile-player-scrim-height);
+  /* it only exists to soften what is behind it, so it never takes a tap */
+  pointer-events: none;
+  z-index: 999;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  /* the mask is what makes the blur ramp up towards the player instead of
+     ending on a visible line */
+  mask-image: linear-gradient(
+    to top,
+    #000 0%,
+    #000 35%,
+    rgba(0, 0, 0, 0.55) 65%,
+    transparent 100%
   );
-}
-.gradient-light {
-  background: linear-gradient(
-    0deg,
-    rgba(255, 255, 255, 0.9) 0%,
-    rgba(255, 255, 255, 0.9) 75%,
-    rgba(255, 255, 255, 0) 100%
+  -webkit-mask-image: linear-gradient(
+    to top,
+    #000 0%,
+    #000 35%,
+    rgba(0, 0, 0, 0.55) 65%,
+    transparent 100%
   );
 }
 
@@ -108,7 +118,16 @@ function clearOverlay() {
   z-index: 1000 !important;
 }
 
+.v-footer.mediacontrols-player-default {
+  padding-right: var(--device-inset-right) !important;
+  padding-left: var(--device-inset-left) !important;
+}
+
 .v-footer.mediacontrols-player-float {
   z-index: 2001 !important;
+  /* the footer only positions the player; its own surface would otherwise show
+     as opaque wedges outside the player's rounded corners. The paired class
+     outweighs the equally-!important bg-default the colour prop brings. */
+  background: transparent !important;
 }
 </style>

@@ -44,12 +44,21 @@ import { useUserPreferences } from "@/composables/userPreferences";
 import { DEVICE_SETTING_KEYS } from "@/constants";
 import { hasAdvancedEntries } from "@/helpers/config_entry_ui";
 import {
+  BROWSER_MEDIA_CONTROLS,
+  BrowserMediaControlsMode,
+  getBrowserMediaControlsMode,
+  MOBILE_SIDEBAR_SIDE,
+  readDeviceSetting,
+  saveDeviceSetting,
+} from "@/helpers/device_settings";
+import {
   ConfigEntry,
   ConfigEntryType,
   ConfigValueType,
 } from "@/plugins/api/interfaces";
 import { companionMode } from "@/plugins/companion";
 import { eventbus } from "@/plugins/eventbus";
+import { getKioskModePreference } from "@/plugins/homeassistant";
 import { $t, i18n } from "@/plugins/i18n";
 import { store } from "@/plugins/store";
 import EditConfig from "./EditConfig.vue";
@@ -63,6 +72,25 @@ const loading = ref(false);
 // no entry below is advanced today, so the toggle stays hidden; the wiring is what
 // makes an advanced entry reachable the moment one is added
 const showAdvancedSettings = ref(false);
+
+// The form hands back every entry on save, not just the edited ones, so the
+// values it submits are compared against these to tell a real change from a
+// re-save of what was already there. Held serialized: the form edits entry.value
+// in place, which an array or object snapshot would follow.
+let initialValues: Record<string, string> = {};
+
+const serializeValue = (value: ConfigValueType | undefined): string =>
+  JSON.stringify(value ?? null);
+
+const valueChanged = (key: string, value: ConfigValueType): boolean =>
+  serializeValue(value) !== initialValues[key];
+
+// The volume slider reads these as computed refs, so saving one takes effect
+// immediately and the reload below would achieve nothing.
+const RELOAD_EXEMPT_PREFERENCE_KEYS = new Set([
+  "volume_slider_mode",
+  "volume_haptics",
+]);
 
 onMounted(() => {
   // TODO: Remove localStorage fallbacks below once migration period is over
@@ -121,18 +149,29 @@ onMounted(() => {
       value: null,
     },
     {
-      key: "enable_browser_controls",
-      type: ConfigEntryType.BOOLEAN,
+      key: BROWSER_MEDIA_CONTROLS,
+      type: ConfigEntryType.STRING,
       label: "enable_browser_controls",
-      default_value: true,
+      default_value: BrowserMediaControlsMode.WEB_PLAYER,
       required: false,
-      options: [],
+      options: [
+        {
+          title: "active_player",
+          value: BrowserMediaControlsMode.ACTIVE_PLAYER,
+        },
+        {
+          title: "web_player",
+          value: BrowserMediaControlsMode.WEB_PLAYER,
+        },
+        {
+          title: "disabled",
+          value: BrowserMediaControlsMode.DISABLED,
+        },
+      ],
       multi_value: false,
       category: "display_settings",
       hidden: companionMode.value,
-      value:
-        localStorage.getItem("frontend.settings.enable_browser_controls") !==
-        "false",
+      value: getBrowserMediaControlsMode(),
     },
     {
       key: "force_mobile_layout",
@@ -159,6 +198,19 @@ onMounted(() => {
       value: (store.currentUser?.preferences?.show_waveform as boolean) ?? true,
     },
     {
+      key: "audiobook_chapter_progress",
+      type: ConfigEntryType.BOOLEAN,
+      label: "audiobook_chapter_progress",
+      default_value: true,
+      required: false,
+      options: [],
+      multi_value: false,
+      category: "audiobooks",
+      value:
+        (store.currentUser?.preferences
+          ?.audiobook_chapter_progress as boolean) ?? true,
+    },
+    {
       key: "mobile_sidebar_side",
       type: ConfigEntryType.STRING,
       label: "mobile_sidebar_side",
@@ -170,8 +222,49 @@ onMounted(() => {
       ],
       multi_value: false,
       category: "display_settings",
+      value: readDeviceSetting(MOBILE_SIDEBAR_SIDE) || "left",
+    },
+    {
+      // Only Home Assistant can give up its own chrome, so this is meaningless
+      // anywhere else.
+      key: "ha_kiosk_mode",
+      type: ConfigEntryType.BOOLEAN,
+      label: "ha_kiosk_mode",
+      default_value: true,
+      required: false,
+      options: [],
+      multi_value: false,
+      category: "display_settings",
+      hidden: !store.isIngressSession,
+      value: getKioskModePreference(),
+    },
+    {
+      key: "volume_slider_mode",
+      type: ConfigEntryType.STRING,
+      label: "volume_slider_mode",
+      default_value: "absolute",
+      required: false,
+      options: [
+        { title: "absolute", value: "absolute" },
+        { title: "relative", value: "relative" },
+      ],
+      multi_value: false,
+      category: "volume_control",
       value:
-        localStorage.getItem("frontend.settings.mobile_sidebar_side") || "left",
+        (store.currentUser?.preferences?.volume_slider_mode as string) ||
+        "absolute",
+    },
+    {
+      key: "volume_haptics",
+      type: ConfigEntryType.BOOLEAN,
+      label: "volume_haptics",
+      default_value: true,
+      required: false,
+      options: [],
+      multi_value: false,
+      category: "volume_control",
+      value:
+        (store.currentUser?.preferences?.volume_haptics as boolean) ?? true,
     },
   ];
 
@@ -192,8 +285,8 @@ onMounted(() => {
   }
 
   // These are frontend-only settings, so the frontend owns their translations (server-provided
-  // entries are localized server-side and arrive pre-resolved). ConfigEntryField renders the
-  // label/option titles directly, so resolve the frontend-owned ones here from the settings.* keys.
+  // entries are localized server-side and arrive pre-resolved). ConfigEntryField renders labels
+  // and option content directly, so resolve the frontend-owned ones here from the settings.* keys.
   for (const entry of configEntries) {
     // fall back to the in-code label/category if a locale is missing the string, so we never
     // surface a raw i18n key in the UI.
@@ -208,15 +301,24 @@ onMounted(() => {
     }
     const desc = $t(`settings.${entry.key}.description`);
     if (desc !== `settings.${entry.key}.description`) entry.description = desc;
-    entry.options = entry.options.map((opt) => ({
-      ...opt,
-      title: $t(
-        `settings.${entry.key}.options.${opt.value}`,
-        opt.title ?? String(opt.value),
-      ),
-    }));
+    entry.options = entry.options.map((opt) => {
+      const descriptionKey = `settings.${entry.key}.option_descriptions.${opt.value}`;
+      const description = $t(descriptionKey);
+      return {
+        ...opt,
+        title: $t(
+          `settings.${entry.key}.options.${opt.value}`,
+          opt.title ?? String(opt.value),
+        ),
+        description:
+          description === descriptionKey ? opt.description : description,
+      };
+    });
   }
   config.value = configEntries;
+  initialValues = Object.fromEntries(
+    configEntries.map((entry) => [entry.key, serializeValue(entry.value)]),
+  );
 });
 
 // methods
@@ -239,17 +341,17 @@ const saveValues = async function (values: Record<string, ConfigValueType>) {
 
       if (DEVICE_SETTING_KEYS.has(key)) {
         // Save to localStorage (per-device settings)
-        const storageKey = `frontend.settings.${key}`;
         const value = values[key];
-        if (value != null) {
-          localStorage.setItem(storageKey, value.toString());
-        } else {
-          localStorage.removeItem(storageKey);
-        }
+        saveDeviceSetting(key, value != null ? value.toString() : null);
       } else {
         // Save to backend via user preferences
         await setPreference(key, values[key]);
-        hasPerUserChanges = true;
+        if (
+          !RELOAD_EXEMPT_PREFERENCE_KEYS.has(key) &&
+          valueChanged(key, values[key])
+        ) {
+          hasPerUserChanges = true;
+        }
       }
     }
 
@@ -264,6 +366,7 @@ const saveValues = async function (values: Record<string, ConfigValueType>) {
   } catch (error) {
     console.error("Failed to save settings:", error);
     loading.value = false;
+    editConfig.value?.saveFailed();
   }
 };
 
@@ -285,7 +388,7 @@ const onAction = async function (
 
 const onImmediateApply = function (values: Record<string, ConfigValueType>) {
   for (const key in values) {
-    localStorage.setItem(`frontend.settings.${key}`, String(values[key]));
+    saveDeviceSetting(key, String(values[key]));
   }
 };
 </script>

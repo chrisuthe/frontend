@@ -36,22 +36,18 @@
       :aria-label="$t('players')"
       side="top"
       :align="popoutFromFullscreen ? 'center' : 'end'"
-      :side-offset="
-        store.mobileLayout
-          ? MOBILE_PLAYER_BAR_POPOUT_GAP
-          : DESKTOP_PLAYER_BAR_POPOUT_GAP
-      "
-      :collision-padding="8"
+      :side-offset="PLAYER_BAR_POPOUT_GAP"
+      :collision-padding="PLAYER_BAR_POPOUT_COLLISION_PADDING"
       :class="[
         'player-bar-popout player-select-popover flex flex-col gap-0 overflow-hidden p-0',
         popoutFromFullscreen && 'player-select-popover-fullscreen',
         store.mobileLayout
-          ? 'w-[calc(100vw-1rem)]'
-          : 'w-[400px] max-w-[calc(100vw-1rem)]',
+          ? 'w-[calc(100vw-2*var(--player-bar-popout-inset-x)-var(--device-inset-left)-var(--device-inset-right))]'
+          : 'w-[400px] max-w-[calc(100vw-2*var(--player-bar-popout-inset-x)-var(--device-inset-left)-var(--device-inset-right))]',
       ]"
       @keydown="handleSheetKeydown"
       @close-auto-focus="preventAutoFocus"
-      @open-auto-focus="handleSheetOpenAutoFocus"
+      @open-auto-focus="preventOnScreenKeyboardOnOpen"
       @interact-outside="handleSheetInteractOutside"
     >
       <PanelDragHandle @dismiss="setMenuOpen(false)" />
@@ -130,7 +126,10 @@
         <p class="sr-only">{{ $t("tooltip.select_player") }}</p>
       </div>
 
-      <div ref="playerList" class="min-h-0 flex-1 overflow-y-auto pb-6">
+      <div
+        ref="playerList"
+        class="player-volume-scroller min-h-0 flex-1 overflow-y-auto pb-6"
+      >
         <!-- outranks the selected player badge on the cards scrolling underneath -->
         <div
           v-if="showSearch"
@@ -173,7 +172,6 @@
             "
             :group-controls-id="getGroupControlsId(player.player_id)"
             :show-selected-indicator="true"
-            :player-menu-items="getPlayerManagementMenuItems(player)"
             @click="selectPlayer"
             @toggle-child-volumes="toggleChildVolumes"
             @toggle-member-controls="toggleMemberControls"
@@ -182,18 +180,11 @@
       </div>
     </PopoverContent>
   </Popover>
-
-  <PlayerRenameDialog
-    :open="renameDialogOpen"
-    :player="renamePlayer"
-    @update:open="setRenameDialogOpen"
-  />
 </template>
 
 <script setup lang="ts">
 import PanelDragHandle from "@/components/PanelDragHandle.vue";
 import PlayerCard from "@/components/PlayerCard.vue";
-import PlayerRenameDialog from "@/components/PlayerRenameDialog.vue";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -211,22 +202,24 @@ import {
 import { SearchInput } from "@/components/ui/search-input";
 import { useOrderedPlayers } from "@/composables/useOrderedPlayers";
 import { useUserPreferences } from "@/composables/userPreferences";
-import type { ContextMenuItem } from "@/helpers/context_menu_item";
+import { preventOnScreenKeyboardOnOpen } from "@/helpers/dialog_focus";
 import {
-  DESKTOP_PLAYER_BAR_POPOUT_GAP,
-  MOBILE_PLAYER_BAR_POPOUT_GAP,
+  PLAYER_BAR_POPOUT_COLLISION_PADDING,
+  PLAYER_BAR_POPOUT_GAP,
   fullscreenPlayerSelectAnchor,
   playerBarEndAnchor,
 } from "@/helpers/player_bar";
-import { isBuiltinPlayer, isPlayerActive } from "@/helpers/players";
+import {
+  isBuiltinPlayer,
+  isPlayerActive,
+  isSelectablePlayer,
+} from "@/helpers/players";
 import { api } from "@/plugins/api";
-import type { Player } from "@/plugins/api/interfaces";
-import { authManager } from "@/plugins/auth";
+import { PlayerType, type Player } from "@/plugins/api/interfaces";
 import { eventbus } from "@/plugins/eventbus";
-import { $t } from "@/plugins/i18n";
 import { store } from "@/plugins/store";
 import { webPlayer } from "@/plugins/web_player";
-import { CircleOff, EllipsisVertical, Pencil } from "@lucide/vue";
+import { EllipsisVertical } from "@lucide/vue";
 import {
   computed,
   nextTick,
@@ -236,7 +229,6 @@ import {
   ref,
   watch,
 } from "vue";
-import { toast } from "vue-sonner";
 
 const SEARCH_PLAYER_THRESHOLD = 10;
 // Stored instead of a built-in player id: those are unique per browser/app
@@ -253,8 +245,6 @@ const playerSearchQuery = ref("");
 const expandedVolumePlayerIds = reactive(new Set<string>());
 const expandedMemberPlayerIds = reactive(new Set<string>());
 const playerList = ref<HTMLElement>();
-const renamePlayer = ref<Player>();
-const renameDialogOpen = ref(false);
 const { getPreference, setPreference } = useUserPreferences();
 const showVolumeForActivePlayersOnly = getPreference<boolean>(
   PLAYER_SELECT_PREFERENCES.showVolumeForActivePlayersOnly,
@@ -277,10 +267,12 @@ let lastInteractionWasKeyboard = false;
 let restoreFocusOnClose = false;
 let autoSelectedPlayerId: string | undefined;
 
-// PlayerSelect is the only surface that lists needs_setup players: a click here
-// launches the setup flow (see selectPlayer) instead of selecting/playing them.
+// PlayerSelect is the only surface that lists needs_setup players (a click here
+// launches the setup flow, see selectPlayer) and capture-only audio inputs
+// (informational rows, so the device stays discoverable).
 const orderedPlayers = useOrderedPlayers({
   allowNeedsSetup: true,
+  allowSources: true,
   selectedPlayerFirst: showSelectedPlayerFirst,
   activePlayersFirst: showActivePlayersFirst,
   includePausedAsActive: true,
@@ -391,14 +383,6 @@ function handleSheetKeydown(event: KeyboardEvent) {
   if (event.key === "Escape") setMenuOpen(false);
 }
 
-function handleSheetOpenAutoFocus(event: Event) {
-  if (!store.mobileLayout) return;
-  event.preventDefault();
-  if (event.target instanceof HTMLElement) {
-    event.target.focus({ preventScroll: true });
-  }
-}
-
 function handleSheetInteractOutside(event: Event) {
   const originalEvent = (event as CustomEvent<{ originalEvent?: Event }>).detail
     ?.originalEvent;
@@ -439,16 +423,27 @@ function selectPlayer(player: Player) {
     eventbus.emit("setupFlowDialog", {
       kind: "player",
       playerId: player.player_id,
+      onFlowEnded: (finished) => {
+        if (finished && player.type !== PlayerType.SOURCE) {
+          activatePlayer(player.player_id);
+        }
+      },
     });
     store.showPlayersMenu = false;
     return;
   }
+  // an audio input can't be a playback target; its row is informational
+  if (player.type === PlayerType.SOURCE) return;
+  activatePlayer(player.player_id);
+  store.showPlayersMenu = false;
+}
+
+function activatePlayer(playerId: string) {
   // remember it here as well: picking the player that was already selected
   // automatically leaves store.activePlayerId untouched
   autoSelectedPlayerId = undefined;
-  rememberPlayer(player.player_id);
-  store.activePlayerId = player.player_id;
-  store.showPlayersMenu = false;
+  rememberPlayer(playerId);
+  store.activePlayerId = playerId;
 }
 
 function showVolumeControl(player: Player) {
@@ -477,75 +472,6 @@ function toggleExpandedPlayer(playerIds: Set<string>, playerId: string) {
 
 function getGroupControlsId(playerId: string) {
   return `player-select-group-${encodeURIComponent(playerId)}`;
-}
-
-function getPlayerManagementMenuItems(player: Player): ContextMenuItem[] {
-  if (!authManager.isAdmin()) return [];
-
-  return [
-    {
-      label: "player_select.rename_player",
-      action: () => {
-        closeMenuThen(() => {
-          renamePlayer.value = player;
-          renameDialogOpen.value = true;
-        });
-      },
-      icon: Pencil,
-    },
-    {
-      label: "player_select.disable_player",
-      action: () => confirmDisablePlayer(player),
-      icon: CircleOff,
-      color: "error",
-    },
-  ];
-}
-
-function confirmDisablePlayer(player: Player) {
-  closeMenuThen(() => {
-    eventbus.emit("deleteConfirmationDialog", {
-      title: $t("player_select.disable_player_title", [player.name]),
-      message: $t("player_select.disable_player_confirmation"),
-      confirmLabel: $t("settings.disable"),
-      onConfirm: () => disablePlayer(player),
-    });
-  });
-}
-
-function closeMenuThen(action: () => void) {
-  setMenuOpen(false);
-  window.setTimeout(action, 0);
-}
-
-async function disablePlayer(player: Player) {
-  const fallbackPlayer = orderedPlayers.value.find(
-    (candidate) =>
-      candidate.player_id !== player.player_id &&
-      candidate.available &&
-      !candidate.needs_setup,
-  );
-
-  try {
-    await api.savePlayerConfig(player.player_id, { enabled: false });
-    if (api.players[player.player_id]) {
-      api.players[player.player_id].enabled = false;
-    }
-    if (store.activePlayerId === player.player_id) {
-      store.activePlayerId = fallbackPlayer?.player_id;
-      if (!fallbackPlayer) {
-        await setPreference("activePlayerId", null);
-      }
-    }
-    toast.success($t("settings.player_saved"));
-  } catch (error) {
-    toast.error(String(error));
-  }
-}
-
-function setRenameDialogOpen(open: boolean) {
-  renameDialogOpen.value = open;
-  if (!open) renamePlayer.value = undefined;
 }
 
 function resetPanelState() {
@@ -599,30 +525,28 @@ function selectDefaultPlayer() {
   if (lastPlayerId === BUILTIN_PLAYER_PREFERENCE) return selectBuiltinPlayer();
   if (lastPlayerId) {
     if (!(lastPlayerId in api.players)) return;
-    if (isSelectablePlayer(lastPlayerId)) return lastPlayerId;
+    if (isSelectablePlayerId(lastPlayerId)) return lastPlayerId;
   }
   const builtinPlayerId = selectBuiltinPlayer();
   if (builtinPlayerId) return builtinPlayerId;
   const selectablePlayers = orderedPlayers.value.filter((player) =>
-    isSelectablePlayer(player.player_id),
+    isSelectablePlayerId(player.player_id),
   );
   return (selectablePlayers.find(isPlayerActive) ?? selectablePlayers[0])
     ?.player_id;
 }
 
 function selectBuiltinPlayer() {
-  if (isSelectablePlayer(webPlayer.player_id)) {
+  if (isSelectablePlayerId(webPlayer.player_id)) {
     return webPlayer.player_id;
   }
-  if (isSelectablePlayer(store.companionPlayerId)) {
+  if (isSelectablePlayerId(store.companionPlayerId)) {
     return store.companionPlayerId;
   }
 }
 
-function isSelectablePlayer(playerId: string | null | undefined) {
-  if (!playerId) return false;
-  const player = api.players[playerId];
-  return player?.enabled && player.available && !player.needs_setup;
+function isSelectablePlayerId(playerId: string | null | undefined) {
+  return !!playerId && isSelectablePlayer(api.players[playerId]);
 }
 
 async function scrollSelectedPlayerIntoView() {
@@ -643,7 +567,7 @@ async function scrollSelectedPlayerIntoView() {
 
 <style>
 .player-select-desktop-offset {
-  bottom: var(--player-bar-height) !important;
+  bottom: var(--bottom-bars-height) !important;
 }
 
 .player-select-mobile-offset {

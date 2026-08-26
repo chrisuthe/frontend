@@ -31,7 +31,6 @@
     "delete_db": "Избришите ставку из базе података",
     "details": "Детаљи",
     "enter_url": "Унесите „URL“ који желите да ручно додате у базу података",
-    "external_source_active": "Екстерни извор је активан: {0}",
     "goto_album": "Иди на албум {0}",
     "goto_artist": "Иди на извођача {0}",
     "items_selected": "{0} ставка(е\/и) селектовано",
@@ -56,8 +55,7 @@
     "player_type": {
         "group": "Група",
         "player": "Плејер",
-        "stereo_pair": "Стерео пар",
-        "sync_group": "Синхронизуј групу"
+        "stereo_pair": "Стерео пар"
     },
     "players": "Плејери",
     "playlist": "Плејлиста",
@@ -267,8 +265,6 @@
                 "concert_pitch_432": "А = 432 Hz"
             }
         },
-        "dsp_enabled": "„DSP“ је омогућен",
-        "dsp_disabled": "„DSP“ је онемогућен",
         "dsp_note_multi_device_group": {
             "label": "Можете конфигурисати „DSP“ за сваки плејер појединачно."
         },
@@ -311,7 +307,6 @@
         "users_description": "Управљајте корисничким налозима, улогама и дозволама",
         "system_description": "Конфигуришите подешавања „Music Assistant“ сервера и основне модуле",
         "system": "Систем",
-        "view_documentation": "Преглед документације",
         "about": "О нама",
         "about_description": "Информације о верзији, заслуге и још много тога",
         "auto_refresh_log": "Аутоматско освежавање",
@@ -655,7 +650,6 @@
         "open_provider_link": "Отворите ову ставку на веб локацији провајдера",
         "collapse_expand": "Скупи\/прошири ову листу",
         "back": "Назад",
-        "show_menu": "Прикажи\/сакриј мени",
         "search_filter_active": "Претрага тренутно филтрира резултате",
         "play_sample": "Пусти узорак",
         "album_type": "Тип албума",
@@ -774,7 +768,6 @@
     "global_search": "Глобална претрага",
     "podcast_episode": "Епизода",
     "podcast_episodes": "Епизоде",
-    "play_from_here": "Пусти одавде",
     "dsp_active": "Активно",
     "currently_playing_players": "Тренутно се репродукује",
     "all_players": "Сви плејери",
@@ -1247,7 +1240,6 @@
             "current_music": "Тренутна музика",
             "copy_music_name": "Копирај наслов песме",
             "copy_music_name_failed": "Није могуће копирати наслов песме",
-            "loading_lyrics": "Учитавање текста песме...",
             "no_winner": "Овог пута нема победника",
             "winner_single": "{0} побеђује са освојених {1} поена",
             "winner_multiple": "{0} деле победу са освојених {1} поена",
@@ -1375,9 +1367,6 @@
             "playback_summary_remote": "Удаљено – Играчи слушају сами за себе",
             "playback_venue_unavailable": "Режим локације је недоступан.",
             "playback_remote_unavailable": "Удаљени режим је недоступан.",
-            "speaker": "Звучник",
-            "choose_speaker": "Изаберите звучник",
-            "no_available_speakers": "Додајте препоручене песме мимо изабраних извора ради веће разноврсности.",
             "no_playback_modes": "Нема доступних режима репродукције. Проверите подешавања музичког квиза.",
             "loading_playback_options": "Учитавање опција репродукције...",
             "error_load_playback_options": "Није успело учитавање опција репродукције",
@@ -1429,15 +1418,11 @@
             "card": {
                 "play": "Пусти",
                 "stop": "Заустави",
-                "stopping": "Заустављање...",
                 "customize": "Прилагоди",
                 "duplicate": "Дуплирај",
                 "delete": "Обриши",
                 "status_failed": "Неуспешно {0}",
                 "start_failed": "Покретање није успело: {0}"
-            },
-            "phase": {
-                "fetch_source_tracks": "Преузимање нумера…"
             },
             "create": {
                 "playlist_label": "Изворна плејлиста",
@@ -1449,11 +1434,6 @@
                 "creating": "Креирање…",
                 "validation": {
                     "playlist_required": "Изаберите изворну плејлисту"
-                }
-            },
-            "presets": {
-                "minimal_dj": {
-                    "name": "Минималистички ди-џеј"
                 }
             },
             "customize": {

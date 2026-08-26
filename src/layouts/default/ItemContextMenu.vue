@@ -51,7 +51,35 @@
       <template v-for="menuItem of visibleItems" :key="menuItem.label">
         <!-- custom inline control (e.g. a stepper); renders its own row and
              manages its own interaction without closing the menu -->
-        <component :is="menuItem.component" v-if="menuItem.component" />
+        <component
+          :is="menuItem.component"
+          v-if="menuItem.component"
+          v-bind="menuItem.componentProps"
+        />
+        <!-- item whose submenu popout is a custom control -->
+        <DropdownMenuSub v-else-if="menuItem.subComponent">
+          <DropdownMenuSubTrigger class="gap-3">
+            <MenuItemIcon :icon="menuItem.icon" />
+            <span class="flex-1 truncate min-w-0">{{
+              menuItemLabel(menuItem)
+            }}</span>
+          </DropdownMenuSubTrigger>
+          <!-- fixed width so popout content truncates on phones; flex column
+               so the component can keep a static header and scroll the rest.
+               capped at the popper's available height (not a viewport fraction)
+               so growing content scrolls instead of shifting the popout up -->
+          <DropdownMenuSubContent
+            align="start"
+            :align-offset="-5"
+            :side-offset="6"
+            class="max-h-[min(70vh,var(--reka-dropdown-menu-content-available-height))] w-[min(92vw,350px)] flex flex-col"
+          >
+            <component
+              :is="menuItem.subComponent"
+              v-bind="menuItem.componentProps"
+            />
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
         <!-- item with submenu -->
         <DropdownMenuSub
           v-else-if="menuItem.subItems && menuItem.subItems.length"
@@ -64,13 +92,14 @@
           >
             <MenuItemIcon :icon="menuItem.icon" />
             <span class="flex-1 truncate min-w-0">{{
-              $t(menuItem.label, menuItem.labelArgs || [])
+              menuItemLabel(menuItem)
             }}</span>
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent
             align="start"
             :align-offset="-5"
             :side-offset="6"
+            class="max-h-[70vh] overflow-y-auto"
           >
             <DropdownMenuItem
               v-for="subMenuItem of menuItem.subItems.filter((x) => !x.hide)"
@@ -83,7 +112,7 @@
             >
               <MenuItemIcon :icon="subMenuItem.icon" />
               <span class="flex-1 truncate min-w-0">{{
-                $t(subMenuItem.label, subMenuItem.labelArgs || [])
+                menuItemLabel(subMenuItem)
               }}</span>
               <Check v-if="subMenuItem.selected" class="ml-auto size-4" />
             </DropdownMenuItem>
@@ -98,7 +127,7 @@
         >
           <MenuItemIcon :icon="menuItem.icon" />
           <span class="flex-1 truncate min-w-0">{{
-            $t(menuItem.label, menuItem.labelArgs || [])
+            menuItemLabel(menuItem)
           }}</span>
           <Check v-if="menuItem.selected" class="ml-auto size-4" />
         </DropdownMenuItem>
@@ -191,10 +220,13 @@ const onOpenChange = function (value: boolean) {
 function closeOnOutsidePointer(event: PointerEvent) {
   if (!show.value) return;
   const target = event.target;
+  // Submenu popouts (and any Select a menu row may host) render outside
+  // [data-item-context-menu]; touching one to scroll it must not read as an
+  // outside press and close the menu.
   if (
     target instanceof Element &&
     target.closest(
-      "[data-item-context-menu], [data-slot='dropdown-menu-sub-content']",
+      "[data-item-context-menu], [data-slot='dropdown-menu-sub-content'], [data-slot='select-content']",
     )
   ) {
     return;
@@ -238,7 +270,9 @@ import {
   pinShortcutStandalone,
   unpinShortcutStandaloneItem,
 } from "@/composables/useShortcuts";
+import { runWithConcurrency } from "@/helpers/concurrency";
 import { genresShareTaxonomy } from "@/helpers/genreTaxonomy";
+import { backFromMediaDetails } from "@/helpers/navigation";
 import { playerVisible } from "@/helpers/players";
 import {
   gotoRadio,
@@ -246,8 +280,8 @@ import {
   radioRelevant,
   radioSupported,
 } from "@/helpers/radio";
-import { runWithConcurrency } from "@/helpers/concurrency";
 import {
+  isAudioSource,
   isItemInLibrary,
   itemIsAvailable,
   itemSupportsPlayLog,
@@ -298,6 +332,7 @@ import {
   PlusCircle,
   RefreshCw,
   RotateCcw,
+  Shuffle,
   SkipForward,
   Sparkles,
   Trash2,
@@ -306,7 +341,10 @@ import type { Component } from "vue";
 
 // The item type lives in a plain .ts module (editor-friendly); re-exported
 // here for convenience since most consumers already import from this file.
-import type { ContextMenuItem } from "@/helpers/context_menu_item";
+import {
+  menuItemLabel,
+  type ContextMenuItem,
+} from "@/helpers/context_menu_item";
 export type { ContextMenuItem } from "@/helpers/context_menu_item";
 
 export const showContextMenuForMediaItem = async function (
@@ -334,8 +372,10 @@ export const showContextMenuForMediaItem = async function (
     return;
   }
 
+  const menuTargets = await withFullItemDetails(mediaItems);
+
   const contextMenuItems = await getContextMenuItems(
-    mediaItems,
+    menuTargets,
     parentItem,
     options,
   );
@@ -344,12 +384,12 @@ export const showContextMenuForMediaItem = async function (
 
   if (
     includePlayMenuItems &&
-    mediaItems[0].is_playable &&
-    itemIsAvailable(mediaItems[0])
+    menuTargets[0].is_playable &&
+    itemIsAvailable(menuTargets[0])
   ) {
     // Play menu items first, then context items
     menuItems = await getPlaybackContextMenuItems(
-      mediaItems,
+      menuTargets,
       parentItem,
       sortBy,
     );
@@ -394,33 +434,32 @@ export const showPlayMenuForMediaItem = async function (
   const firstItem = playableItems[0];
 
   let playMenuItems: ContextMenuItem[] = [];
-  const LiveSourceTypes = [MediaType.RADIO, MediaType.AUDIO_SOURCE];
-  const enqueueConfigKey = LiveSourceTypes.includes(firstItem.media_type)
-    ? "default_enqueue_option_live_sources"
-    : `default_enqueue_option_${firstItem.media_type}`;
-  const defaultEnqueueOption = (await api.getCoreConfigValue(
-    "player_queues",
-    enqueueConfigKey,
-  )) as QueueOption;
-  for (const option of [
-    QueueOption.PLAY,
-    QueueOption.NEXT,
-    QueueOption.ADD,
-    QueueOption.REPLACE,
-    QueueOption.REPLACE_NEXT,
-  ]) {
+  const defaultEnqueueOption = await getDefaultEnqueueOption(firstItem);
+  if (isAudioSource(firstItem)) {
+    playMenuItems.push(
+      startAudioSourceMenuItem(playableItems, defaultEnqueueOption),
+    );
+  } else {
+    playMenuItems.push(
+      ...buildEnqueueMenuItems(playableItems, defaultEnqueueOption),
+    );
+  }
+  // Starting the media shuffled is its own action rather than a state indicator:
+  // the queue's shuffle flag says nothing about what the media about to be started
+  // will do, but an explicit request is always honoured.
+  if (canPlayShuffled(playableItems)) {
     playMenuItems.push({
-      label: $t(`queue_option.${option}`),
+      label: "play_shuffled",
+      labelArgs: [],
       action: () => {
         api.playMedia(
           playableItems.map((x) => x.uri),
-          option,
+          QueueOption.REPLACE,
+          { shuffle: true },
         );
       },
-      icon: queueOptionIconMap[option],
-      labelArgs: [],
+      icon: Shuffle,
       disabled: !store.activePlayer,
-      selected: option === defaultEnqueueOption,
     });
   }
 
@@ -676,7 +715,12 @@ export const getContextMenuItems = async function (
               if ("provider_mappings" in item)
                 item.provider_mappings.forEach((pm) => (pm.in_library = false));
             }
-            if (resolvedItem.item_id == parentItem?.item_id) router.go(-1);
+            // library ids restart per media type, so the type has to match too
+            if (
+              resolvedItem.item_id == parentItem?.item_id &&
+              resolvedItem.media_type == parentItem.media_type
+            )
+              backFromMediaDetails(router);
             // Clear the multi-select after action
             eventbus.emit("clearSelection");
           },
@@ -842,14 +886,9 @@ export const getContextMenuItems = async function (
           label: "play_from_beginning",
           icon: RotateCcw,
           action: () => {
-            api.playMedia(
-              item.uri,
-              QueueOption.PLAY,
-              undefined,
-              undefined,
-              undefined,
-              true,
-            );
+            api.playMedia(item.uri, QueueOption.PLAY, {
+              start_from_beginning: true,
+            });
           },
           disabled: !store.activePlayer,
         });
@@ -1111,7 +1150,8 @@ export const getContextMenuItems = async function (
 
 /**
   Generates playback-related context menu items based on the given media items and their parent.
-  This includes options like "Play now", "Enqueue", "Play radio", and "Play from here" (for playlists/albums).
+  This includes "Play now", the "Enqueue options" submenu and "Play from here" (for playlists/albums).
+  An AudioSource only gets "Play now": it cannot be queued for later.
 */
 export const getPlaybackContextMenuItems = async function (
   items: MediaItemTypeOrItemMapping[],
@@ -1127,16 +1167,16 @@ export const getPlaybackContextMenuItems = async function (
   if (playableItems.length == 0) return playMenuItems;
   const firstItem = playableItems[0];
 
-  const LiveSourceTypes = [MediaType.RADIO, MediaType.AUDIO_SOURCE];
-  const enqueueConfigKey = LiveSourceTypes.includes(firstItem.media_type)
-    ? "default_enqueue_option_live_sources"
-    : `default_enqueue_option_${firstItem.media_type}`;
-  const defaultEnqueueOption = (await api.getCoreConfigValue(
-    "player_queues",
-    enqueueConfigKey,
-  )) as QueueOption;
+  const defaultEnqueueOption = await getDefaultEnqueueOption(firstItem);
 
   if (!store.activePlayer) return playMenuItems;
+
+  if (isAudioSource(firstItem)) {
+    playMenuItems.push(
+      startAudioSourceMenuItem(playableItems, defaultEnqueueOption),
+    );
+    return playMenuItems;
+  }
 
   // Play from here...
   if (
@@ -1149,13 +1189,10 @@ export const getPlaybackContextMenuItems = async function (
       playMenuItems.push({
         label: "play_playlist_from",
         action: () => {
-          api.playMedia(
-            parentItem.uri,
-            undefined,
-            playableItems[0].item_id,
-            undefined,
-            sortBy,
-          );
+          api.playMedia(parentItem.uri, undefined, {
+            start_item: playableItems[0].item_id,
+            sort_by: sortBy,
+          });
         },
         icon: PlayCircle,
         labelArgs: [],
@@ -1167,25 +1204,25 @@ export const getPlaybackContextMenuItems = async function (
       playMenuItems.push({
         label: "play_album_from",
         action: () => {
-          api.playMedia(
-            parentItem.uri,
-            undefined,
-            firstItem.item_id,
-            undefined,
-            sortBy,
-          );
+          api.playMedia(parentItem.uri, undefined, {
+            start_item: firstItem.item_id,
+            sort_by: sortBy,
+          });
         },
         icon: PlayCircle,
         labelArgs: [],
         disabled: !store.activePlayer,
       });
     }
-    // Play from here (podcast episode)
+    // Play from here (podcast episode). Episodes are listed newest first, so
+    // playback runs the other way: from the chosen episode forward in time.
     if (parentItem.media_type == MediaType.PODCAST) {
       playMenuItems.push({
-        label: "play_from_here",
+        label: "play_from_here_to_latest",
         action: () => {
-          api.playMedia(parentItem.uri, undefined, firstItem.item_id);
+          api.playMedia(parentItem.uri, undefined, {
+            start_item: firstItem.item_id,
+          });
         },
         icon: PlayCircle,
         labelArgs: [],
@@ -1212,31 +1249,9 @@ export const getPlaybackContextMenuItems = async function (
   }
 
   // "Enqueue..." submenu with all enqueue options
-  const enqueueSubItems: ContextMenuItem[] = [];
-  for (const option of [
-    QueueOption.PLAY,
-    QueueOption.NEXT,
-    QueueOption.ADD,
-    QueueOption.REPLACE,
-    QueueOption.REPLACE_NEXT,
-  ]) {
-    enqueueSubItems.push({
-      label: $t(`queue_option.${option}`),
-      action: () => {
-        api.playMedia(
-          items.map((x) => x.uri),
-          option,
-        );
-      },
-      icon: queueOptionIconMap[option],
-      labelArgs: [],
-      disabled: !store.activePlayer,
-      selected: option === defaultEnqueueOption,
-    });
-  }
   playMenuItems.push({
     label: "enqueue",
-    subItems: enqueueSubItems,
+    subItems: buildEnqueueMenuItems(items, defaultEnqueueOption),
     icon: ListMusic,
     labelArgs: [],
   });
@@ -1323,5 +1338,142 @@ export const getPlaybackContextMenuItems = async function (
     }
   }
   return playMenuItems;
+};
+
+// Radio and AudioSource are both live, infinite streams and share a single enqueue
+// default on the server; every other media type has its own config key.
+const LIVE_SOURCE_MEDIA_TYPES = [MediaType.RADIO, MediaType.AUDIO_SOURCE];
+
+/**
+ * The configured default enqueue option for the given item's media type.
+ *
+ * Only "play" and "replace" are configurable, so the result always starts
+ * playback right away.
+ */
+const getDefaultEnqueueOption = async function (
+  item: MediaItemTypeOrItemMapping,
+): Promise<QueueOption> {
+  const configKey = LIVE_SOURCE_MEDIA_TYPES.includes(item.media_type)
+    ? "default_enqueue_option_live_sources"
+    : `default_enqueue_option_${item.media_type}`;
+  return (await api.getCoreConfigValue(
+    "player_queues",
+    configKey,
+  )) as QueueOption;
+};
+
+/**
+ * Menu entries for every way the given items can be started or queued, with the
+ * configured default marked as selected.
+ */
+const buildEnqueueMenuItems = function (
+  items: MediaItemTypeOrItemMapping[],
+  defaultEnqueueOption: QueueOption,
+): ContextMenuItem[] {
+  return [
+    QueueOption.PLAY,
+    QueueOption.NEXT,
+    QueueOption.ADD,
+    QueueOption.REPLACE,
+    QueueOption.REPLACE_NEXT,
+  ].map((option) => ({
+    label: $t(`queue_option.${option}`),
+    action: () => {
+      api.playMedia(
+        items.map((x) => x.uri),
+        option,
+      );
+    },
+    icon: queueOptionIconMap[option],
+    labelArgs: [],
+    disabled: !store.activePlayer,
+    selected: option === defaultEnqueueOption,
+  }));
+};
+
+/**
+ * The single "Play now" entry offered for an AudioSource.
+ *
+ * An AudioSource hands the player over to a live external source (Spotify Connect,
+ * an AirPlay receiver, ...) that never ends, so anything placed behind it in the
+ * queue would never be reached: starting it is the only meaningful action. The
+ * configured default decides whether the existing queue is kept or replaced.
+ */
+const startAudioSourceMenuItem = function (
+  items: MediaItemTypeOrItemMapping[],
+  defaultEnqueueOption: QueueOption,
+): ContextMenuItem {
+  return {
+    label: "play_now",
+    action: () => {
+      api.playMedia(
+        items.map((x) => x.uri),
+        defaultEnqueueOption,
+      );
+    },
+    icon: PlayCircle,
+    labelArgs: [],
+    disabled: !store.activePlayer,
+  };
+};
+
+/**
+ * Hydrate a single audiobook or podcast-episode reference (no provider
+ * mappings) with the play state the menu needs; anything else is returned
+ * as is.
+ */
+const withFullItemDetails = async function (
+  items: MediaItemTypeOrItemMapping[],
+): Promise<MediaItemTypeOrItemMapping[]> {
+  if (items.length != 1) return items;
+  const item = items[0];
+  if ("provider_mappings" in item || !itemSupportsPlayLog(item)) {
+    return items;
+  }
+  // a failed lookup still opens the menu, without the actions needing the detail
+  const fullItem = await api
+    .getItem(item.media_type, item.item_id, item.provider, {
+      suppressGlobalError: true,
+    })
+    .catch((err) => {
+      console.error("[ItemContextMenu] failed to resolve %s", item.uri, err);
+      return undefined;
+    });
+  if (!fullItem || !itemSupportsPlayLog(fullItem)) return items;
+  // hydrate only the play state onto the reference: id-based actions (favorites,
+  // library) and the playlog are keyed by the identity the card holds
+  return [
+    {
+      ...item,
+      fully_played: fullItem.fully_played,
+      resume_position_ms: fullItem.resume_position_ms,
+    } as MediaItemTypeOrItemMapping,
+  ];
+};
+
+// media types whose contents have an order that is worth shuffling. Audiobooks and
+// podcasts are left out: their chapters/episodes are meant to be heard in order.
+const SHUFFLEABLE_MEDIA_TYPES = [
+  MediaType.ALBUM,
+  MediaType.ARTIST,
+  MediaType.COLLECTION,
+  MediaType.FOLDER,
+  MediaType.GENRE,
+  MediaType.PLAYLIST,
+];
+
+/**
+ * Whether starting the given items shuffled is worth offering.
+ *
+ * A single item needs to be a container to have an order to shuffle; a hand-picked
+ * selection of several items is the user's own list, so it always qualifies.
+ */
+const canPlayShuffled = function (
+  items: MediaItemTypeOrItemMapping[],
+): boolean {
+  if (!api.supportsPlayMediaShuffle) return false;
+  return (
+    items.length > 1 || SHUFFLEABLE_MEDIA_TYPES.includes(items[0].media_type)
+  );
 };
 </script>

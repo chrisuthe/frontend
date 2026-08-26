@@ -253,6 +253,7 @@
         v-if="getBreakpointValue('bp2') && showProvider"
         :domain="getListItemProviderIconDomain(item)"
         :size="24"
+        class="mx-[10px]"
       />
 
       <!-- fully played or in progress icon -->
@@ -379,6 +380,7 @@ const compProps = withDefaults(defineProps<Props>(), {
   isDisabled: false,
   isAvailable: true,
   parentItem: undefined,
+  sortBy: undefined,
 });
 
 // computed properties

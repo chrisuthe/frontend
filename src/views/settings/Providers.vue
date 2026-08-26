@@ -31,11 +31,7 @@
         @menu="(evt) => onMenu(evt, item)"
       >
         <template #prepend>
-          <ProviderIcon
-            :domain="item.domain"
-            :size="40"
-            class="provider-icon"
-          />
+          <ProviderIcon :domain="item.domain" :size="40" />
         </template>
 
         <template #title>
@@ -97,7 +93,7 @@
               :title="
                 isErrorStatus(item.status)
                   ? getErrorText(item)
-                  : statusLabel(item.status)
+                  : statusLabel(item)
               "
             />
             <v-chip
@@ -109,13 +105,7 @@
               class="mx-1 text-uppercase"
               :color="getStageColor(api.providerManifests[item.domain]?.stage)"
             >
-              {{
-                $t(
-                  String(
-                    api.providerManifests[item.domain]?.stage || "",
-                  ).toLowerCase(),
-                )
-              }}
+              {{ getStageLabel(api.providerManifests[item.domain]?.stage) }}
             </v-chip>
           </div>
         </template>
@@ -166,7 +156,7 @@
               :title="
                 isErrorStatus(item.status)
                   ? getErrorText(item)
-                  : statusLabel(item.status)
+                  : statusLabel(item)
               "
             >
               <v-icon
@@ -184,13 +174,7 @@
               class="mx-1 text-uppercase"
               :color="getStageColor(api.providerManifests[item.domain]?.stage)"
             >
-              {{
-                $t(
-                  String(
-                    api.providerManifests[item.domain]?.stage || "",
-                  ).toLowerCase(),
-                )
-              }}
+              {{ getStageLabel(api.providerManifests[item.domain]?.stage) }}
             </v-chip>
 
             <v-btn
@@ -216,9 +200,7 @@
                 size="16"
                 :color="statusColor(item.status)"
               />
-              <span class="provider-error-text">{{
-                statusLabel(item.status)
-              }}</span>
+              <span class="provider-error-text">{{ statusLabel(item) }}</span>
             </div>
             <div class="provider-error-detail mt-1">
               {{ getErrorText(item) }}
@@ -272,8 +254,10 @@ import { useBackgroundTasks } from "@/composables/background-tasks/useBackground
 import type { ContextMenuItem } from "@/helpers/context_menu_item";
 import {
   canReconfigureProvider,
+  getProviderStageTranslationKey,
   getProviderStatusTranslationKey,
   providerRequiresReconfiguration,
+  shouldShowStageBadge,
 } from "@/helpers/provider_config";
 import { openLinkInNewTab } from "@/helpers/utils";
 import { api } from "@/plugins/api";
@@ -395,8 +379,9 @@ const canReconfigure = function (provider: ProviderConfig) {
   );
 };
 
-const shouldShowStageBadge = function (stage?: ProviderStage) {
-  return !!stage && stage !== ProviderStage.STABLE;
+const getStageLabel = function (stage?: ProviderStage) {
+  const key = getProviderStageTranslationKey(stage);
+  return key ? $t(key) : "";
 };
 
 onMounted(() => {
@@ -609,8 +594,13 @@ const statusColor = function (status?: ProviderStatus | null) {
     .otherwise(() => "grey");
 };
 
-const statusLabel = function (status?: ProviderStatus | null) {
-  return $t(getProviderStatusTranslationKey(status));
+const statusLabel = function (item: ProviderConfig) {
+  return $t(
+    getProviderStatusTranslationKey(
+      item.status,
+      api.providerManifests[item.domain]?.stage,
+    ),
+  );
 };
 
 // an error status carries a (user-relevant) reason in last_error
@@ -793,10 +783,6 @@ const getAllFilteredProviders = function () {
     gap: 4px;
     min-width: 0;
   }
-}
-
-.provider-icon {
-  margin-right: 0;
 }
 
 .provider-disabled {

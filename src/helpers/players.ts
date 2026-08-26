@@ -35,15 +35,20 @@ export const isPlayerActive = function (player: Player): boolean {
  * Check if the player may be shown to the user.
  *
  * Set allowGroupChilds to also include players that are synced to or part of a
- * group, and allowNeedsSetup to include players that still need to be set up.
+ * group, allowNeedsSetup to include players that still need to be set up, and
+ * allowSources to include capture-only audio input devices.
  */
 export const playerVisible = function (
   player: Player,
   allowGroupChilds = false,
   allowNeedsSetup = false,
+  allowSources = false,
 ): boolean {
   // perform some basic checks if we may use/show the player
   if (!player.enabled) return false;
+  // A capture-only device renders nothing: list it only where it is presented
+  // as an audio input (opt-in via allowSources), never among playback targets.
+  if (player.type === PlayerType.SOURCE && !allowSources) return false;
   if (player.synced_to && !allowGroupChilds) {
     return false;
   }
@@ -73,14 +78,55 @@ export const playerVisible = function (
   return true;
 };
 
-// Keep hidden players out of group pickers unless they represent this device or
-// are player types intended to be grouped with audio players.
+/**
+ * Check if the player may become the active playback target.
+ *
+ * Capture-only audio inputs are listed for discoverability but never render
+ * audio, so they can never be selected.
+ */
+export const isSelectablePlayer = function (
+  player: Player | null | undefined,
+): boolean {
+  return Boolean(
+    player?.enabled &&
+    player.available &&
+    !player.needs_setup &&
+    player.type !== PlayerType.SOURCE,
+  );
+};
+
+/**
+ * Check if the player may be offered as a group member.
+ *
+ * Hiding a player only removes it from the main listings, so it stays pickable
+ * here. Private players are the exception, because they belong to someone
+ * else's device or to the server itself: those only show up once unhidden.
+ */
 export const groupMemberPickerVisible = function (player: Player): boolean {
+  return isBuiltinPlayer(player) || !(player.hide_in_ui && player.private);
+};
+
+/**
+ * Check if the player can take part in grouping.
+ *
+ * Capture-only devices (audio inputs, or an unknown type from an older server)
+ * render nothing, so they are never offered as a group member.
+ */
+export const canBeGroupMember = function (player: Player): boolean {
   return (
-    !player.hide_in_ui ||
-    isBuiltinPlayer(player) ||
-    player.type === PlayerType.LIGHT ||
-    player.type === PlayerType.VISUALIZER
+    player.type !== PlayerType.UNKNOWN && player.type !== PlayerType.SOURCE
+  );
+};
+
+/**
+ * Check if the player renders a now-playing view instead of audio.
+ *
+ * Visualizers and metadata-only displays are both screens to the user, so the
+ * group pickers offer them as one category.
+ */
+export const isScreenPlayer = function (player: Player): boolean {
+  return (
+    player.type === PlayerType.VISUALIZER || player.type === PlayerType.DISPLAY
   );
 };
 

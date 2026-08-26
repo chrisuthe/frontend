@@ -4,7 +4,7 @@
     variant="ghost"
     :class="[
       navigation
-        ? 'player-control-button mobile-navigation-item min-w-0 flex-1 rounded-none px-1'
+        ? 'player-control-button mobile-navigation-item min-w-0 flex-1 px-1'
         : 'player-control-button player-bar-action player-bar-player-button h-20 w-24 min-w-0 rounded-none px-1',
     ]"
     :data-active="store.showPlayersMenu"
@@ -13,7 +13,7 @@
     :aria-expanded="store.showPlayersMenu"
     aria-haspopup="dialog"
     @click="togglePlayersMenu"
-    @pointerleave="suppressHover = false"
+    @pointerenter="onPointerEnter"
   >
     <span
       :class="navigation ? 'mobile-navigation-icon' : 'player-bar-action-icon'"
@@ -38,11 +38,14 @@
 <script setup lang="ts">
 import PlayerIcon from "@/components/PlayerIcon.vue";
 import { Button } from "@/components/ui/button";
+import { usePopoutTriggerHover } from "@/composables/usePopoutTriggerHover";
 import { $t } from "@/plugins/i18n";
 import { store } from "@/plugins/store";
-import { computed, ref } from "vue";
+import { computed } from "vue";
 
-const suppressHover = ref(false);
+const { suppressHover, onPointerEnter } = usePopoutTriggerHover(
+  () => store.showPlayersMenu,
+);
 const playerName = computed(() => store.activePlayer?.name || $t("no_player"));
 const playerSelectLabel = computed(
   () => `${$t("tooltip.select_player")}: ${playerName.value}`,
@@ -58,7 +61,6 @@ withDefaults(
 );
 
 function togglePlayersMenu() {
-  suppressHover.value = store.showPlayersMenu;
   store.showPlayersMenu = !store.showPlayersMenu;
 }
 </script>

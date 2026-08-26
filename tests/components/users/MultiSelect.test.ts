@@ -15,7 +15,8 @@ const { storeMock } = vi.hoisted(() => ({
 
 vi.mock("@/plugins/store", () => ({ store: storeMock }));
 
-vi.mock("vue-i18n", () => ({
+vi.mock("vue-i18n", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("vue-i18n")>()),
   useI18n: () => ({ t: (key: string) => key }),
 }));
 
@@ -35,16 +36,16 @@ describe("MultiSelect", () => {
     expect(document.activeElement).toBe(searchField());
   });
 
-  it("leaves the search field alone on a touch device", async () => {
+  it("focuses the options list itself on a touch device", async () => {
     storeMock.isTouchscreen = true;
 
     await openOptions();
 
     expect(document.activeElement).not.toBe(searchField());
-    // focus stays on the button that opened the list; moving it into the
-    // popover would count as a focus outside and dismiss the list
-    expect(document.activeElement).toBe(trigger());
+    // the list takes focus instead, so a screen reader announces it and the
+    // tab order continues from there
     expect(optionsList()).not.toBeNull();
+    expect(document.activeElement).toBe(optionsList());
   });
 });
 

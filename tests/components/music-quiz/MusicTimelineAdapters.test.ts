@@ -235,6 +235,42 @@ describe("Music Timeline game adapters", () => {
     expect(countdown.text()).toContain("0s");
   });
 
+  it("renders nothing for players while answering", () => {
+    const wrapper = mount(MusicTimelinePlayerRound, {
+      props: {
+        state: { ...playerState, phase: "answering" },
+        currentRound: answeringRound,
+        busy: false,
+      },
+    });
+
+    expect(wrapper.find('[data-testid="music-timeline-round"]').exists()).toBe(
+      false,
+    );
+  });
+
+  it("pins the Ready button to the bottom of the stage during reveal", async () => {
+    const wrapper = mount(MusicTimelinePlayerRound, {
+      props: {
+        state: playerState,
+        currentRound: revealRound,
+        busy: false,
+      },
+    });
+    const readyButton = wrapper.get('[data-testid="music-timeline-ready"]');
+    const footer = readyButton.element.parentElement;
+
+    expect(footer?.classList.contains("sticky")).toBe(true);
+    expect(
+      footer?.classList.contains("bottom-[var(--device-inset-bottom,0px)]"),
+    ).toBe(true);
+    expect(footer?.classList.contains("order-last")).toBe(true);
+
+    await readyButton.trigger("click");
+
+    expect(wrapper.emitted("ready")).toEqual([[]]);
+  });
+
   it("keeps intermediate Ready after song details", async () => {
     const wrapper = mount(MusicTimelinePlayerRound, {
       props: {

@@ -1,3 +1,6 @@
+// Imported once, outside any test: evaluating the app graph is the expensive
+// part, and the import phase is not on a test's clock.
+import App from "@/App.vue";
 import {
   EventType,
   ProviderStatus,
@@ -5,6 +8,7 @@ import {
   UserRole,
   type ProviderConfig,
 } from "@/plugins/api/interfaces";
+import { saveDeviceSetting } from "@/helpers/device_settings";
 import type { MusicAssistantApi } from "@/plugins/api";
 import { flushPromises, shallowMount, type VueWrapper } from "@vue/test-utils";
 import { nextTick } from "vue";
@@ -17,8 +21,11 @@ const {
   authManagerMock,
   guestType,
   i18nMock,
+  haStateMock,
   mockInitializeCompanionIntegration,
   mockInitializeWebPlayerModeSync,
+  mockSubscribeToHAProperties,
+  mockGetKioskModePreference,
   mockProxyEnsureReady,
   mockProxySetTransport,
   mockPruneStaleProviderFilters,
@@ -62,7 +69,7 @@ const {
     },
     setLocale: vi.fn<MusicAssistantApi["setLocale"]>(),
     state: { value: "authenticated" },
-    subscribe: vi.fn((_event: string, _callback: CallableFunction) => () => {}),
+    subscribe: vi.fn(),
     supportsServerSideTranslations: false,
   };
   const authManagerMock = {
@@ -70,11 +77,11 @@ const {
     clearGuestSession: vi.fn(),
     endRejectedGuestSession: vi.fn(),
     getToken: vi.fn(),
-    guestSessionKind: vi.fn(() => guestType.value),
-    isDashboardViewer: vi.fn(() => false),
-    isGuestAccessSession: vi.fn(() => guestType.value !== null),
-    isMusicQuizGuest: vi.fn(() => guestType.value === "music_quiz"),
-    isPartyGuest: vi.fn(() => guestType.value === "party"),
+    guestSessionKind: vi.fn(),
+    isDashboardViewer: vi.fn(),
+    isGuestAccessSession: vi.fn(),
+    isMusicQuizGuest: vi.fn(),
+    isPartyGuest: vi.fn(),
     returnToFullApp: vi.fn(),
     setBaseUrl: vi.fn(),
     setCurrentUser: vi.fn(),
@@ -91,8 +98,11 @@ const {
         t: (key: string) => key,
       },
     },
+    haStateMock: { isSubscribed: false, kioskModeEnabled: false },
     mockInitializeCompanionIntegration: vi.fn(),
     mockInitializeWebPlayerModeSync: vi.fn(),
+    mockSubscribeToHAProperties: vi.fn(),
+    mockGetKioskModePreference: vi.fn(() => true),
     mockProxyEnsureReady: vi.fn(),
     mockProxySetTransport: vi.fn(),
     mockPruneStaleProviderFilters: vi.fn(),
@@ -120,8 +130,9 @@ const {
     },
     webPlayerMock: {
       audioSource: "disabled",
+      browserControlsMode: "active_player",
       interacted: false,
-      player_id: null,
+      player_id: null as string | null,
       setBaseUrl: vi.fn(),
       setInteracted: vi.fn(),
       tabMode: "disabled",
@@ -174,6 +185,8 @@ vi.mock("@/composables/useShortcuts", () => ({
 
 vi.mock("@/plugins/web_player", () => ({
   initializeWebPlayerModeSync: mockInitializeWebPlayerModeSync,
+  isPlaybackMode: (mode: string) =>
+    mode === "sendspin_only" || mode === "sendspin_with_controls",
   webPlayer: webPlayerMock,
   WebPlayerMode: {
     CONTROLS_ONLY: "controls_only",
@@ -184,6 +197,13 @@ vi.mock("@/plugins/web_player", () => ({
 
 vi.mock("@/plugins/companion", () => ({
   initializeCompanionIntegration: mockInitializeCompanionIntegration,
+}));
+
+vi.mock("@/plugins/homeassistant", () => ({
+  haState: haStateMock,
+  subscribeToHAProperties: mockSubscribeToHAProperties,
+  unsubscribeFromHAProperties: vi.fn(),
+  getKioskModePreference: mockGetKioskModePreference,
 }));
 
 vi.mock("@/plugins/remote", () => ({
@@ -276,7 +296,10 @@ let wrapper: VueWrapper | undefined;
 
 describe("App initialization", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    // Resets implementations as well as call history: a return value or
+    // rejection one test installs must not leak into the next. The defaults
+    // below are the only source of mock behavior, so test order can't matter.
+    vi.resetAllMocks();
     vi.resetModules();
     guestType.value = null;
     i18nMock.global.locale.value = "en";
@@ -289,6 +312,9 @@ describe("App initialization", () => {
       server_id: "server-id",
       status: "running",
     };
+    apiMock.authenticateWithToken.mockResolvedValue({ user: user() });
+    apiMock.setLocale.mockResolvedValue(undefined);
+    apiMock.subscribe.mockReturnValue(() => {});
     apiMock.getCurrentUserInfo.mockResolvedValue(
       user({
         role: UserRole.USER,
@@ -299,6 +325,7 @@ describe("App initialization", () => {
     apiMock.fetchState.mockResolvedValue(undefined);
     apiMock.fetchProviders.mockResolvedValue(undefined);
     apiMock.initialize.mockResolvedValue(undefined);
+    apiMock.setLocale.mockResolvedValue(undefined);
     apiMock.getProviderConfigs.mockResolvedValue([partyPluginConfig()]);
     for (const method of [
       apiMock.getLibraryAlbumsCount,
@@ -316,17 +343,33 @@ describe("App initialization", () => {
     mockProxyEnsureReady.mockResolvedValue(undefined);
     mockProxySetTransport.mockResolvedValue(undefined);
     mockPruneStaleProviderFilters.mockResolvedValue(undefined);
+    haStateMock.isSubscribed = false;
+    haStateMock.kioskModeEnabled = false;
+    mockGetKioskModePreference.mockReturnValue(true);
     storeMock.currentUser = undefined;
     storeMock.enabledPlugins = new Set<string>();
     storeMock.isIngressSession = false;
     storeMock.isOnboarding = false;
     webPlayerMock.audioSource = "disabled";
+    webPlayerMock.browserControlsMode = "active_player";
     webPlayerMock.interacted = false;
     webPlayerMock.player_id = null;
     webPlayerMock.tabMode = "disabled";
     if (routeState.current) routeState.current.meta = {};
     vi.stubGlobal("localStorage", createStorage());
     vi.stubGlobal("sessionStorage", createStorage());
+    authManagerMock.getToken.mockReturnValue(null);
+    authManagerMock.guestSessionKind.mockImplementation(() => guestType.value);
+    authManagerMock.isDashboardViewer.mockReturnValue(false);
+    authManagerMock.isGuestAccessSession.mockImplementation(
+      () => guestType.value !== null,
+    );
+    authManagerMock.isMusicQuizGuest.mockImplementation(
+      () => guestType.value === "music_quiz",
+    );
+    authManagerMock.isPartyGuest.mockImplementation(
+      () => guestType.value === "party",
+    );
     authManagerMock.endRejectedGuestSession.mockImplementation(() => {
       const kind = authManagerMock.guestSessionKind();
       if (!kind) return { outcome: "no-guest-session" };
@@ -343,6 +386,10 @@ describe("App initialization", () => {
       configurable: true,
       value: vi.fn().mockReturnValue({
         addEventListener: vi.fn(),
+        // The theme composable keeps its "auto" listener in module state for
+        // the whole file, so a later mount on a fixed theme unregisters it
+        // against the MediaQueryList an earlier test handed out.
+        removeEventListener: vi.fn(),
         matches: false,
       }),
     });
@@ -389,6 +436,17 @@ describe("App initialization", () => {
       expect(mockPruneStaleProviderFilters).not.toHaveBeenCalled();
     },
   );
+
+  it("follows the force mobile layout setting without a reload", async () => {
+    wrapper = await mountApp();
+    expect(storeMock.forceMobileLayout).toBe(false);
+
+    saveDeviceSetting("force_mobile_layout", "true");
+    expect(storeMock.forceMobileLayout).toBe(true);
+
+    saveDeviceSetting("force_mobile_layout", null);
+    expect(storeMock.forceMobileLayout).toBe(false);
+  });
 
   it("keeps full initialization and plugin discovery for regular users", async () => {
     wrapper = await mountApp();
@@ -445,7 +503,7 @@ describe("App initialization", () => {
     const pluginConfigs = createDeferred<ProviderConfig[]>();
     apiMock.fetchState.mockReturnValue(serverState.promise);
     apiMock.getProviderConfigs.mockReturnValue(pluginConfigs.promise);
-    wrapper = await mountAppWithoutSettling();
+    wrapper = mountAppWithoutSettling();
 
     await flushPromises();
     expect(apiMock.fetchState).toHaveBeenCalledOnce();
@@ -474,6 +532,9 @@ describe("App initialization", () => {
     "does not mount browser media controls for a %s guest fallback tab",
     async (type) => {
       guestType.value = type;
+      // Hand the tab a media session, so being a guest is the only thing left
+      // that can withhold the controls.
+      stubMediaSession();
       apiMock.getCurrentUserInfo.mockResolvedValue(
         user({
           role: UserRole.GUEST,
@@ -494,10 +555,7 @@ describe("App initialization", () => {
   );
 
   it("keeps browser media controls for regular fallback tabs", async () => {
-    Object.defineProperty(navigator, "mediaSession", {
-      configurable: true,
-      value: {},
-    });
+    stubMediaSession();
     webPlayerMock.audioSource = "controls_only";
     webPlayerMock.interacted = true;
     webPlayerMock.tabMode = "controls_only";
@@ -509,17 +567,56 @@ describe("App initialization", () => {
     ).toBe(true);
   });
 
+  it("leaves media controls to Sendspin in the playback tab", async () => {
+    stubMediaSession();
+    webPlayerMock.audioSource = "controls_only";
+    webPlayerMock.browserControlsMode = "active_player";
+    webPlayerMock.interacted = true;
+    webPlayerMock.player_id = "web-player";
+    webPlayerMock.tabMode = "sendspin_with_controls";
+
+    wrapper = await mountApp();
+
+    expect(
+      wrapper.findComponent({ name: "PlayerBrowserMediaControls" }).exists(),
+    ).toBe(false);
+    expect(wrapper.findComponent({ name: "SendspinPlayer" }).exists()).toBe(
+      true,
+    );
+  });
+
+  it("does not control the selected player in built-in-only mode", async () => {
+    const mediaSession = stubMediaSession();
+    webPlayerMock.audioSource = "controls_only";
+    webPlayerMock.browserControlsMode = "web_player";
+    webPlayerMock.interacted = true;
+    webPlayerMock.tabMode = "controls_only";
+
+    wrapper = await mountApp();
+
+    expect(
+      wrapper.findComponent({ name: "PlayerBrowserMediaControls" }).exists(),
+    ).toBe(false);
+    expect(mediaSession.metadata).toBeNull();
+    expect(mediaSession.playbackState).toBe("none");
+  });
+
+  it("clears media controls when no component owns them", async () => {
+    const mediaSession = stubMediaSession();
+    webPlayerMock.audioSource = "disabled";
+    webPlayerMock.browserControlsMode = "active_player";
+    webPlayerMock.interacted = true;
+    webPlayerMock.tabMode = "controls_only";
+
+    wrapper = await mountApp();
+
+    expect(mediaSession.metadata).toBeNull();
+    expect(mediaSession.playbackState).toBe("none");
+    expect(mediaSession.setActionHandler).toHaveBeenCalledTimes(7);
+  });
+
   it("clears browser media controls on participant routes for regular users", async () => {
-    const mediaSession = {
-      metadata: {} as MediaMetadata | null,
-      playbackState: "playing" as MediaSessionPlaybackState,
-      setActionHandler: vi.fn(),
-      setPositionState: vi.fn(),
-    };
-    Object.defineProperty(navigator, "mediaSession", {
-      configurable: true,
-      value: mediaSession,
-    });
+    const mediaSession = stubMediaSession();
     webPlayerMock.audioSource = "controls_only";
     webPlayerMock.interacted = true;
     webPlayerMock.tabMode = "controls_only";
@@ -548,7 +645,7 @@ describe("App initialization", () => {
 
   it("remembers a temporary remote connection after regular login", async () => {
     apiMock.state.value = "auth_required";
-    wrapper = await mountAppWithoutSettling();
+    wrapper = mountAppWithoutSettling();
 
     wrapper.findComponent({ name: "Login" }).vm.$emit("authenticated", {
       token: "regular-token",
@@ -570,7 +667,7 @@ describe("App initialization", () => {
 
   it("clears proxy mode before connecting to a local server", async () => {
     apiMock.state.value = "disconnected";
-    wrapper = await mountAppWithoutSettling();
+    wrapper = mountAppWithoutSettling();
 
     wrapper
       .findComponent({ name: "Login" })
@@ -665,6 +762,68 @@ describe("App initialization", () => {
     expect(sessionStorage.getItem("ma_guest_session_ended")).toBeNull();
     expect(authManagerMock.clearGuestSession).not.toHaveBeenCalled();
     expect(apiMock.requireAuthentication).toHaveBeenCalledOnce();
+  });
+
+  it("takes the safe area padding over in an ingress session", async () => {
+    storeMock.isIngressSession = true;
+
+    wrapper = await mountApp();
+
+    expect(mockSubscribeToHAProperties).toHaveBeenCalledWith({
+      handleSafeArea: true,
+      kioskMode: true,
+    });
+  });
+
+  it("leaves the Home Assistant chrome up when kiosk mode is turned off", async () => {
+    storeMock.isIngressSession = true;
+    mockGetKioskModePreference.mockReturnValue(false);
+
+    wrapper = await mountApp();
+
+    expect(mockSubscribeToHAProperties).toHaveBeenCalledWith({
+      handleSafeArea: true,
+      kioskMode: false,
+    });
+  });
+
+  it("keeps a way back to Home Assistant while the server is away", async () => {
+    haStateMock.kioskModeEnabled = true;
+    wrapper = await mountApp();
+    expect(wrapper.find(".ha-escape-button").exists()).toBe(false);
+
+    // This screen replaces the whole app, sidebar and all, and kiosk mode has
+    // left Home Assistant nothing on screen either: without this the panel is a
+    // spinner with nowhere to go for as long as the server stays away.
+    apiMock.state.value = "reconnecting";
+    await nextTick();
+
+    expect(wrapper.find(".ha-escape-button").exists()).toBe(true);
+  });
+
+  it("leaves the escape button off while Home Assistant shows its own menu", async () => {
+    haStateMock.kioskModeEnabled = false;
+    wrapper = await mountApp();
+
+    apiMock.state.value = "reconnecting";
+    await nextTick();
+
+    expect(wrapper.find(".ha-escape-button").exists()).toBe(false);
+  });
+
+  it("leaves the safe area to the host outside an ingress session", async () => {
+    wrapper = await mountApp();
+
+    expect(mockSubscribeToHAProperties).not.toHaveBeenCalled();
+  });
+
+  it("keeps the safe area subscription it already has across a reconnect", async () => {
+    storeMock.isIngressSession = true;
+    haStateMock.isSubscribed = true;
+
+    wrapper = await mountApp();
+
+    expect(mockSubscribeToHAProperties).not.toHaveBeenCalled();
   });
 
   it("re-authenticates an ingress session through the proxy on reconnect", async () => {
@@ -798,7 +957,7 @@ async function mountAuthenticatedApp() {
  * a timer anywhere in that path would need vi.waitFor instead.
  */
 async function mountApp() {
-  const mounted = await mountAppWithoutSettling();
+  const mounted = mountAppWithoutSettling();
   await flushPromises();
   expect(apiMock.state.value).toBe("initialized");
   expect(mockInitializeWebPlayerModeSync).toHaveBeenCalledOnce();
@@ -810,8 +969,7 @@ async function mountApp() {
  * Mount the app and register it for teardown, without waiting for
  * initialization to settle; the test drives what happens next.
  */
-async function mountAppWithoutSettling() {
-  const { default: App } = await import("@/App.vue");
+function mountAppWithoutSettling() {
   // Registered at mount time so afterEach unmounts the app even when a
   // caller's assertion throws: a live instance keeps reacting to api.state
   // and corrupts every later test.
@@ -888,6 +1046,23 @@ function createDeferred<T = void>() {
     resolve = resolvePromise;
   });
   return { promise, resolve };
+}
+
+/**
+ * Give the tab a media session, as a browser that supports one would.
+ */
+function stubMediaSession() {
+  const session = {
+    metadata: {} as MediaMetadata | null,
+    playbackState: "playing" as MediaSessionPlaybackState,
+    setActionHandler: vi.fn(),
+    setPositionState: vi.fn(),
+  };
+  Object.defineProperty(navigator, "mediaSession", {
+    configurable: true,
+    value: session,
+  });
+  return session;
 }
 
 function createStorage(): Storage {

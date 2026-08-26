@@ -15,13 +15,19 @@ export default mergeConfig(
       // stylesheet has to be compiled instead of stubbed out. Component styles
       // stay unprocessed, so the rest of the suite is unaffected.
       css: { include: [/src\/styles\/(style|global)\.css/] },
-      setupFiles: ["./tests/setup/failOnUnhandledErrors.ts"],
-      // Errors that escape a test must never be silently dropped; the setup
-      // file above additionally surfaces them in the pass/fail tally.
+      setupFiles: [
+        "./tests/setup/blockNetworkAccess.ts",
+        "./tests/setup/failOnUnhandledErrors.ts",
+      ],
+      // Errors that escape a test must never be silently dropped; the
+      // failOnUnhandledErrors setup file additionally surfaces them in the
+      // pass/fail tally.
       dangerouslyIgnoreUnhandledErrors: false,
       server: {
         deps: {
-          inline: ["vuetify"],
+          // sendspin-js ships ESM whose relative imports carry no file extension,
+          // which node cannot resolve, so let vite resolve them instead.
+          inline: ["vuetify", "@sendspin/sendspin-js"],
         },
       },
       // Ignore nested git worktrees so a sibling branch's tests under

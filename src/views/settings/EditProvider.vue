@@ -36,14 +36,14 @@
           <div class="font-semibold">
             {{ $t("settings.provider_requires_attention") }}
           </div>
-          <div
-            class="mt-0.5 text-sm whitespace-pre-wrap break-words opacity-90"
-          >
-            {{
+          <!-- markdown: a retirement message links to the replacement add-on -->
+          <MarkdownText
+            class="mt-0.5 text-sm opacity-90"
+            :text="
               config.last_error?.message ||
-              $t("settings.provider_status_auth_required")
-            }}
-          </div>
+              $t('settings.provider_status_auth_required')
+            "
+          />
           <div
             v-if="
               config.status === ProviderStatus.INCOMPATIBLE ||
@@ -225,6 +225,11 @@
           />
         </CardContent>
       </Card>
+
+      <!-- ambient sounds: manage user-added custom sounds -->
+      <AmbientSoundsCustomSounds
+        v-if="config.domain === 'ambient_sounds' && config.enabled"
+      />
     </div>
 
     <edit-config
@@ -287,6 +292,7 @@
 </template>
 
 <script setup lang="ts">
+import MarkdownText from "@/components/MarkdownText.vue";
 import ProviderIcon from "@/components/ProviderIcon.vue";
 import ProviderSaveErrorDialog from "@/components/ProviderSaveErrorDialog.vue";
 import { Badge } from "@/components/ui/badge";
@@ -342,6 +348,7 @@ import { useRouter } from "vue-router";
 import { toast } from "vue-sonner";
 import { authManager } from "@/plugins/auth";
 import AdvancedSettingsToggle from "./AdvancedSettingsToggle.vue";
+import AmbientSoundsCustomSounds from "./AmbientSoundsCustomSounds.vue";
 import EditConfig from "./EditConfig.vue";
 
 const SENDSPIN_SYNC_DOMAIN = "sendspin_sync";
@@ -402,7 +409,12 @@ const canToggleEnabled = computed(
 );
 
 const providerStatusLabel = computed(() =>
-  t(getProviderStatusTranslationKey(config.value?.status)),
+  t(
+    getProviderStatusTranslationKey(
+      config.value?.status,
+      providerManifest.value?.stage,
+    ),
+  ),
 );
 
 const providerStatusClass = computed(() =>
@@ -566,6 +578,7 @@ const onSubmit = async function (values: Record<string, ConfigValueType>) {
     .catch((err) => {
       saveErrorMessage.value = String(err);
       saveErrorOpen.value = true;
+      editConfig.value?.saveFailed();
     })
     .finally(() => {
       loading.value = false;

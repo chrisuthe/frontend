@@ -28,10 +28,7 @@
         :data-suppress-hover="suppressHover"
         :disabled="disabled"
         :aria-label="`${$t('audio_overlay_volume')}: ${displayVolume}%`"
-        :aria-expanded="open"
-        aria-haspopup="dialog"
-        @click.capture="handleTriggerClick"
-        @pointerleave="suppressHover = false"
+        @pointerenter="onPointerEnter"
         @wheel="adjustVolume"
       >
         <span class="player-bar-action-icon">
@@ -53,9 +50,9 @@
       data-player-panel
       side="top"
       align="end"
-      :side-offset="DESKTOP_PLAYER_BAR_POPOUT_GAP"
-      :collision-padding="8"
-      class="player-bar-popout player-volume-popover flex w-[340px] max-w-[calc(100vw-1rem)] flex-col overflow-hidden p-0"
+      :side-offset="PLAYER_BAR_POPOUT_GAP"
+      :collision-padding="PLAYER_BAR_POPOUT_COLLISION_PADDING"
+      class="player-bar-popout player-volume-popover flex w-[340px] max-w-[calc(100vw-2*var(--player-bar-popout-inset-x)-var(--device-inset-left)-var(--device-inset-right))] flex-col overflow-hidden p-0"
       @open-auto-focus="preventAutoFocus"
       @interact-outside="handleInteractOutside"
     >
@@ -74,8 +71,10 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { usePopoutTriggerHover } from "@/composables/usePopoutTriggerHover";
 import {
-  DESKTOP_PLAYER_BAR_POPOUT_GAP,
+  PLAYER_BAR_POPOUT_COLLISION_PADDING,
+  PLAYER_BAR_POPOUT_GAP,
   playerBarEndAnchor,
 } from "@/helpers/player_bar";
 import { isPlayerGrouped } from "@/helpers/players";
@@ -90,7 +89,9 @@ const props = defineProps<{
 }>();
 
 const open = ref(false);
-const suppressHover = ref(false);
+const { suppressHover, onPointerEnter } = usePopoutTriggerHover(
+  () => open.value,
+);
 
 const grouped = computed(() => isPlayerGrouped(props.player));
 const displayVolume = computed(() =>
@@ -120,10 +121,6 @@ const disabled = computed(
 );
 function handleOpenChange(value: boolean) {
   open.value = value;
-}
-
-function handleTriggerClick() {
-  suppressHover.value = open.value;
 }
 
 function preventAutoFocus(event: Event) {
@@ -169,7 +166,7 @@ function adjustVolume(event: WheelEvent) {
 
 <style>
 .player-volume-backdrop-desktop {
-  bottom: var(--player-bar-height);
+  bottom: var(--bottom-bars-height);
 }
 
 /* the paired class outweighs the equally-!important z-index utility the popover
