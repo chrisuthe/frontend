@@ -72,54 +72,52 @@ export async function openMicrophone(): Promise<MicrophoneCapture> {
   const requested = Object.fromEntries(
     VOICE_PROCESSING.map((name) => [name, false]),
   ) as Record<VoiceProcessing, boolean>;
-  const supportedConstraints = navigator.mediaDevices.getSupportedConstraints();
-  const supported = Object.fromEntries(
-    VOICE_PROCESSING.map((name) => [name, Boolean(supportedConstraints[name])]),
-  ) as Record<VoiceProcessing, boolean>;
+  const supported = {} as Record<VoiceProcessing, boolean>;
 
-  let stream: MediaStream;
+  let stream: MediaStream | null = null;
+  let constraints: ConstraintCheck;
   try {
+    const known = navigator.mediaDevices.getSupportedConstraints();
+    for (const name of VOICE_PROCESSING) supported[name] = Boolean(known[name]);
     stream = await navigator.mediaDevices.getUserMedia({ audio: requested });
+
+    const track = stream.getAudioTracks()[0];
+    const settings = track?.getSettings() ?? {};
+    const applied: Partial<Record<VoiceProcessing, boolean>> = {};
+    for (const name of VOICE_PROCESSING) {
+      const value = settings[name];
+      if (typeof value === "boolean") applied[name] = value;
+    }
+
+    constraints = {
+      requested,
+      applied,
+      supported,
+      honored: VOICE_PROCESSING.every((name) => applied[name] === false),
+      trackSettings: settings,
+      trackLabel: track?.label ?? "",
+      error: track
+        ? null
+        : {
+            name: "NoAudioTrackError",
+            message: "The captured stream carried no audio track",
+          },
+    };
+    if (track) return { stream, constraints };
   } catch (error) {
-    return {
-      stream: null,
-      constraints: {
-        requested,
-        applied: {},
-        supported,
-        honored: false,
-        trackSettings: {},
-        trackLabel: "",
-        error: describeError(error),
-      },
+    constraints = {
+      requested,
+      applied: {},
+      supported,
+      honored: false,
+      trackSettings: {},
+      trackLabel: "",
+      error: describeError(error),
     };
   }
 
-  const track = stream.getAudioTracks()[0];
-  const settings = track?.getSettings() ?? {};
-  const applied: Partial<Record<VoiceProcessing, boolean>> = {};
-  for (const name of VOICE_PROCESSING) {
-    const value = settings[name];
-    if (typeof value === "boolean") applied[name] = value;
-  }
-
-  const constraints: ConstraintCheck = {
-    requested,
-    applied,
-    supported,
-    honored: VOICE_PROCESSING.every((name) => applied[name] === false),
-    trackSettings: settings,
-    trackLabel: track?.label ?? "",
-    error: track
-      ? null
-      : {
-          name: "NoAudioTrackError",
-          message: "The captured stream carried no audio track",
-        },
-  };
-  if (track) return { stream, constraints };
-
-  for (const orphan of stream.getTracks()) orphan.stop();
+  // Nothing usable came back, and nothing else will be holding this stream.
+  for (const orphan of stream?.getTracks() ?? []) orphan.stop();
   return { stream: null, constraints };
 }
 

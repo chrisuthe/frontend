@@ -70,6 +70,9 @@
               </template>
             </dl>
 
+            <p v-if="check.noteKey" class="mt-2 text-sm text-destructive">
+              {{ $t(check.noteKey) }}
+            </p>
             <p v-if="check.error" class="mt-2 text-sm text-destructive">
               {{ check.error }}
             </p>
@@ -127,6 +130,7 @@ import {
 import {
   PROBE_CHECKS,
   summarizeProbe,
+  pipelineNeverOpened,
   useMicrophoneProbe,
   type CheckStatus,
   type MicrophoneProbeReport,
@@ -155,6 +159,8 @@ interface CheckRow {
   titleKey: string;
   hintKey: string;
   details: DetailRow[];
+  /** A finding the raw numbers alone would not spell out. */
+  noteKey: string | null;
   error: string | null;
 }
 
@@ -202,9 +208,11 @@ const blocker = computed(() => {
     ? "insecure"
     : !current.mediaApi.getUserMedia
       ? "no_api"
-      : MISSING_DEVICE_ERRORS.includes(current.constraints?.error?.name ?? "")
-        ? "no_device"
-        : "refused";
+      : pipelineNeverOpened(current)
+        ? "no_audio_pipeline"
+        : MISSING_DEVICE_ERRORS.includes(current.constraints?.error?.name ?? "")
+          ? "no_device"
+          : "refused";
   return `providers.sendspin_sync.probe.blocked.${reason}`;
 });
 
@@ -219,9 +227,23 @@ const checks = computed<CheckRow[]>(() => {
     titleKey: `providers.sendspin_sync.probe.checks.${id}.title`,
     hintKey: `providers.sendspin_sync.probe.checks.${id}.hint`,
     details: detailsFor(id, current),
+    noteKey: noteFor(id, current),
     error: errorFor(id, current),
   }));
 });
+
+/** Spells out a finding the numbers on the row would leave the reader to infer. */
+function noteFor(
+  id: ProbeCheckId,
+  current: MicrophoneProbeReport,
+): string | null {
+  const capture = id === "capture" ? current.capture : null;
+  // A capture that was cut short has no verdict to spell out.
+  if (!capture || capture.error || capture.aborted) return null;
+  return capture.peakAmplitude === 0
+    ? "providers.sendspin_sync.probe.checks.capture.silent"
+    : null;
+}
 
 function detailsFor(
   id: ProbeCheckId,
@@ -268,22 +290,21 @@ function detailsFor(
       const capture = current.capture;
       if (!capture) return [];
       return [
-        { label: "duration", value: `${capture.measuredSeconds.toFixed(1)} s` },
+        { label: "measured", value: `${capture.measuredSeconds.toFixed(1)} s` },
         { label: "framesDelivered", value: `${capture.framesDelivered}` },
         {
           label: "framesExpected",
           value: `${Math.round(capture.expectedFrames)}`,
         },
         {
-          label: "frame discrepancy",
-          value: `${capture.frameDiscrepancyPpm.toFixed(1)} ppm`,
+          label: "discrepancy",
+          value: `${capture.discrepancyPpm.toFixed(1)} ppm`,
         },
-        {
-          label: "clock drift",
-          value: `${capture.clockDriftPpm.toFixed(1)} ppm`,
-        },
-        { label: "silentQuanta", value: `${capture.silentQuanta}` },
-        { label: "renderQuanta", value: `${capture.quanta}` },
+        { label: "peak", value: capture.peakAmplitude.toFixed(4) },
+        { label: "droppedQuanta", value: `${capture.droppedQuanta}` },
+        { label: "leadInQuanta", value: `${capture.leadInQuanta}` },
+        { label: "unconnectedQuanta", value: `${capture.unconnectedQuanta}` },
+        { label: "totalQuanta", value: `${capture.totalQuanta}` },
       ];
     }
     case "wake_lock": {

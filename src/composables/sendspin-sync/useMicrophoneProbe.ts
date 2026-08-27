@@ -44,7 +44,10 @@ const DRIFT_WARN_PPM = 1000;
 interface FrameCounterReport {
   frames: number;
   quanta: number;
-  silentQuanta: number;
+  leadInQuanta: number;
+  droppedQuanta: number;
+  unconnectedQuanta: number;
+  peak: number;
   contextTime: number;
 }
 
@@ -70,26 +73,60 @@ export interface AudioContextCheck {
   outputLatency: number | null;
 }
 
+/**
+ * What the capture observed.
+ *
+ * `discrepancyPpm` and the counts it is derived from are measured between the
+ * two least delayed reports of the run (see {@link anchors}), so they span
+ * rather less than `requestedSeconds` — `measuredSeconds` and `measuredQuanta`
+ * are that span. The tallies below them cover the whole capture, because a
+ * dropout in the discarded ends still happened; `totalQuanta` is their
+ * denominator.
+ */
 export interface CaptureCheck {
   requestedSeconds: number;
-  /** Wall-clock seconds between the first and last worklet report. */
+  /** Wall-clock seconds the discrepancy was measured over. */
   measuredSeconds: number;
-  /** Seconds the context's own render clock advanced over the same span. */
+  /**
+   * Seconds the audio pipeline's own clock advanced over the same span.
+   *
+   * Expected to match `framesDelivered / sampleRate`, since a render quantum is
+   * a fixed 128 frames. Whether a browser really derives its clock that way is
+   * implementation-defined, and this is what checks it.
+   */
   renderSeconds: number;
+  measuredQuanta: number;
   framesDelivered: number;
   /** What the render clock says should have arrived over `renderSeconds`. */
   expectedFrames: number;
   /**
    * Delivered frames against expected, in parts per million.
    *
-   * Both terms come off the audio thread, so no main-thread jitter enters this.
+   * The frames are counted on the audio thread and the expectation comes from
+   * the system clock, so this is the audio pipeline measured against the
+   * system — the one figure a chirp's arrival time depends on.
    */
-  frameDiscrepancyPpm: number;
-  /** Render quanta the input handed back no channel at all. */
-  silentQuanta: number;
-  quanta: number;
-  /** The render clock against the system clock, in parts per million. */
-  clockDriftPpm: number;
+  discrepancyPpm: number;
+  /** Render quanta over the whole capture, the denominator for the counts below. */
+  totalQuanta: number;
+  /** Silent quanta before any signal arrived: the capture device warming up. */
+  leadInQuanta: number;
+  /**
+   * Silent quanta after signal had arrived: a gap in the audio.
+   *
+   * A noise gate the browser would not switch off, or an OS-level mute, also
+   * produces true silence — so read this next to the voice processing check
+   * rather than as a dropout on its own.
+   */
+  droppedQuanta: number;
+  /** Quanta with no input connected at all; anything but zero means a broken graph. */
+  unconnectedQuanta: number;
+  /** Loudest sample of the whole capture. Zero means the microphone heard nothing. */
+  peakAmplitude: number;
+  /** False when the audio pipeline never got as far as capturing. */
+  started: boolean;
+  /** True when the view was left before the capture could finish. */
+  aborted: boolean;
   error: ProbeError | null;
 }
 
@@ -231,10 +268,22 @@ export function useMicrophoneProbe() {
  * most of the probe never runs, and calling that a device failure would send
  * people chasing the wrong problem.
  */
+/**
+ * Whether the audio pipeline failed before it could capture anything.
+ *
+ * A context the browser refused, or a worklet that would not load, says nothing
+ * about the microphone — the same reasoning as a refused permission, and the
+ * reason both are reported as blocked rather than as a bad measurement.
+ */
+export function pipelineNeverOpened(report: MicrophoneProbeReport): boolean {
+  return Boolean(report.capture?.error) && !report.capture?.started;
+}
+
 export function summarizeProbe(report: MicrophoneProbeReport): ProbeSummary {
   const constraints = report.constraints;
   const capture = report.capture;
   const wakeLock = report.wakeLock;
+  const blockedBeforeCapture = pipelineNeverOpened(report);
 
   const checks: Record<ProbeCheckId, CheckStatus> = {
     secure_context: report.secureContext.secure ? "pass" : "fail",
@@ -250,15 +299,18 @@ export function summarizeProbe(report: MicrophoneProbeReport): ProbeSummary {
             ? "pass"
             : "warn",
     audio_context: report.audioContext ? "pass" : "not_evaluated",
-    capture: !capture
-      ? "not_evaluated"
-      : capture.error
-        ? "fail"
-        : capture.silentQuanta > 0 ||
-            Math.abs(capture.frameDiscrepancyPpm) > DRIFT_WARN_PPM ||
-            Math.abs(capture.clockDriftPpm) > DRIFT_WARN_PPM
-          ? "warn"
-          : "pass",
+    capture:
+      !capture || capture.aborted || blockedBeforeCapture
+        ? "not_evaluated"
+        : // A capture of pure silence is the one outcome that must never read
+          // as success: the chirp would never be found in it.
+          capture.error || capture.peakAmplitude === 0
+          ? "fail"
+          : capture.droppedQuanta > 0 ||
+              capture.unconnectedQuanta > 0 ||
+              Math.abs(capture.discrepancyPpm) > DRIFT_WARN_PPM
+            ? "warn"
+            : "pass",
     wake_lock: !wakeLock
       ? "not_evaluated"
       : wakeLock.acquired && wakeLock.heldToEnd
@@ -275,7 +327,8 @@ export function summarizeProbe(report: MicrophoneProbeReport): ProbeSummary {
   const verdict: ProbeVerdict =
     failed("secure_context") ||
     failed("media_api") ||
-    Boolean(constraints?.error)
+    Boolean(constraints?.error) ||
+    blockedBeforeCapture
       ? "blocked"
       : failed("voice_processing") ||
           failed("capture") ||
@@ -330,6 +383,7 @@ async function capture(
   let counter: AudioWorkletNode | null = null;
   let sink: GainNode | null = null;
   let baseline = 0;
+  let watching = false;
   const onStateChange = () => {
     transitions.push({
       atSeconds: context.currentTime - baseline,
@@ -360,21 +414,33 @@ async function capture(
 
     baseline = context.currentTime;
     context.addEventListener("statechange", onStateChange);
+    watching = true;
+    // A context the browser declined to start fires no change of its own, so
+    // the state it settled on has to be recorded here or it is never reported.
+    if (context.state !== "running") onStateChange();
+
     result.capture = await countFrames(context, counter, signal, onProgress);
   } catch (error) {
-    result.capture = { ...emptyCapture(), error: describeError(error) };
+    result.capture = {
+      ...emptyCapture(),
+      aborted: signal.aborted,
+      error: describeError(error),
+    };
   } finally {
     context.removeEventListener("statechange", onStateChange);
     source?.disconnect();
     counter?.disconnect();
     counter?.port.close();
     sink?.disconnect();
-    result.contextState = {
-      stayedRunning: transitions.every(
-        (transition) => transition.state === "running",
-      ),
-      transitions,
-    };
+    // Left null when the graph never ran: an empty transition list would
+    // otherwise read as "it stayed running the whole time".
+    if (watching)
+      result.contextState = {
+        stayedRunning: transitions.every(
+          (transition) => transition.state === "running",
+        ),
+        transitions,
+      };
   }
 }
 
@@ -401,9 +467,10 @@ function countFrames(
       settled = true;
       clearInterval(progress);
       clearTimeout(deadline);
+      signal.removeEventListener("abort", finish);
       counter.port.onmessage = null;
       onProgress((performance.now() - startedAt) / 1000);
-      resolve(measure(context.sampleRate, samples));
+      resolve(measure(context.sampleRate, samples, signal.aborted));
     };
 
     const deadline = setTimeout(finish, CAPTURE_SECONDS * 1000);
@@ -414,60 +481,73 @@ function countFrames(
 }
 
 /**
- * Turns the collected reports into two independent readings.
+ * Turns the collected reports into the capture's readings.
  *
- * The frame totals and the render clock both come off the audio thread, so
- * comparing them carries no main-thread jitter at all. Comparing the render
- * clock with the system clock cannot avoid that jitter, so it is handled
- * separately in {@link clockDriftPpm}.
+ * The discrepancy comes from the anchors so scheduling jitter stays out of it;
+ * the tallies come from the last report, which carries the whole capture.
  */
-function measure(sampleRate: number, samples: CaptureSample[]): CaptureCheck {
-  const first = samples[0];
-  const last = samples[samples.length - 1];
-  const renderSeconds =
-    first && last ? last.contextTime - first.contextTime : 0;
-  if (!first || !last || renderSeconds <= 0)
+function measure(
+  sampleRate: number,
+  samples: CaptureSample[],
+  aborted: boolean,
+): CaptureCheck {
+  const latest = samples[samples.length - 1];
+  const span = anchors(samples);
+  if (!latest || !span)
     return {
       ...emptyCapture(),
-      error: {
-        name: "NoFramesError",
-        message: "The worklet delivered no measurable frames",
-      },
+      started: true,
+      aborted,
+      error: aborted
+        ? null
+        : {
+            name: "NoFramesError",
+            message: "The worklet delivered no measurable frames",
+          },
     };
 
-  const framesDelivered = last.frames - first.frames;
-  const expectedFrames = sampleRate * renderSeconds;
+  const { start, end } = span;
+  const measuredSeconds = (end.at - start.at) / 1000;
+  const framesDelivered = end.frames - start.frames;
+  const expectedFrames = sampleRate * measuredSeconds;
   return {
     requestedSeconds: CAPTURE_SECONDS,
-    measuredSeconds: (last.at - first.at) / 1000,
-    renderSeconds,
+    measuredSeconds,
+    renderSeconds: end.contextTime - start.contextTime,
+    measuredQuanta: end.quanta - start.quanta,
     framesDelivered,
     expectedFrames,
-    frameDiscrepancyPpm:
-      ((framesDelivered - expectedFrames) / expectedFrames) * 1e6,
-    silentQuanta: last.silentQuanta - first.silentQuanta,
-    quanta: last.quanta - first.quanta,
-    clockDriftPpm: clockDriftPpm(samples),
+    discrepancyPpm: ((framesDelivered - expectedFrames) / expectedFrames) * 1e6,
+    totalQuanta: latest.quanta,
+    leadInQuanta: latest.leadInQuanta,
+    droppedQuanta: latest.droppedQuanta,
+    unconnectedQuanta: latest.unconnectedQuanta,
+    peakAmplitude: latest.peak,
+    started: true,
+    aborted,
     error: null,
   };
 }
 
 /**
- * Slope of the render clock against the system clock, in ppm.
+ * Picks the least delayed report from each end of the run.
  *
- * A report can only ever arrive late, never early, so the least delayed report
- * in a window is the closest thing to a true reading of the pair of clocks.
- * Taking one from each end of the run keeps scheduling jitter out of the slope.
+ * A report can only ever arrive late, never early, so the smallest gap between
+ * the two clocks is the closest thing to a true reading of the pair. Taking one
+ * from each end keeps main-thread scheduling jitter out of every rate measured
+ * between them. Returns null when the run was too short to span two reports.
  */
-function clockDriftPpm(samples: CaptureSample[]): number {
+function anchors(
+  samples: CaptureSample[],
+): { start: CaptureSample; end: CaptureSample } | null {
+  if (samples.length < 2) return null;
+
   const window = Math.max(1, Math.floor(samples.length / 3));
   const start = leastDelayed(samples.slice(0, window));
   const end = leastDelayed(samples.slice(-window));
-  const wallMs = end.at - start.at;
-  if (wallMs <= 0) return 0;
-
-  const renderMs = (end.contextTime - start.contextTime) * 1000;
-  return ((renderMs - wallMs) / wallMs) * 1e6;
+  return end.at > start.at && end.contextTime > start.contextTime
+    ? { start, end }
+    : null;
 }
 
 function leastDelayed(samples: CaptureSample[]): CaptureSample {
@@ -483,12 +563,17 @@ function emptyCapture(): CaptureCheck {
     requestedSeconds: CAPTURE_SECONDS,
     measuredSeconds: 0,
     renderSeconds: 0,
+    measuredQuanta: 0,
     framesDelivered: 0,
     expectedFrames: 0,
-    frameDiscrepancyPpm: 0,
-    silentQuanta: 0,
-    quanta: 0,
-    clockDriftPpm: 0,
+    discrepancyPpm: 0,
+    totalQuanta: 0,
+    leadInQuanta: 0,
+    droppedQuanta: 0,
+    unconnectedQuanta: 0,
+    peakAmplitude: 0,
+    started: false,
+    aborted: false,
     error: null,
   };
 }

@@ -95,8 +95,7 @@ describe("SendspinSyncProbe", () => {
     // The device's own rate is worth seeing next to the context's.
     expect(wrapper.text()).toContain("44100 Hz");
     // Both drift readings are shown, and neither is folded into the other.
-    expect(wrapper.text()).toContain("-12.0 ppm");
-    expect(wrapper.text()).toContain("31.0 ppm");
+    expect(wrapper.text()).toContain("-133.3 ppm");
     // A constraint the browser stayed silent on must not read as "off".
     expect(wrapper.text()).toContain(
       "providers.sendspin_sync.probe.values.not_reported",
@@ -276,14 +275,19 @@ function degradedReport(): MicrophoneProbeReport {
     },
     capture: {
       requestedSeconds: 30,
-      measuredSeconds: 30,
-      renderSeconds: 29.999,
-      framesDelivered: 1439935,
-      expectedFrames: 1439952,
-      frameDiscrepancyPpm: -12,
-      silentQuanta: 0,
-      quanta: 11249,
-      clockDriftPpm: 31,
+      measuredSeconds: 20,
+      renderSeconds: (7499 * 128) / SAMPLE_RATE,
+      measuredQuanta: 7499,
+      framesDelivered: 7499 * 128,
+      expectedFrames: SAMPLE_RATE * 20,
+      discrepancyPpm: -133.33333333333334,
+      totalQuanta: 11250,
+      leadInQuanta: 9,
+      droppedQuanta: 0,
+      unconnectedQuanta: 0,
+      peakAmplitude: 0.1875,
+      started: true,
+      aborted: false,
       error: null,
     },
     wakeLock: { supported: true, acquired: true, heldToEnd: true, error: null },
